@@ -1,0 +1,34 @@
+# === Backend (FastAPI) ===
+fastapi
+uvicorn[standard]
+
+# === Database (PostgreSQL + ORM) ===
+sqlalchemy
+psycopg[binary]          # PostgreSQL driver
+sqlmodel
+alembic                  # DB migrations
+
+# === Auth & Security ===
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart         # For file uploads
+
+# === Environment Variables ===
+pydantic
+pydantic-settings
+
+# === AI / RAG Engine ===
+sentence-transformers
+faiss-cpu                # Vector database
+numpy                    # Required for FAISS
+scikit-learn             # Optional but used for preprocessing
+
+# === Optional LLM Integration ===
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+
+# === Utility ===
+python-dotenv
+requests
