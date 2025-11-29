@@ -1,1 +1,9 @@
 .env*
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+# Embedding/LLM caches (if used)
+data/
+cache/
+models/
