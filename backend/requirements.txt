@@ -33,3 +33,5 @@ langchain-text-splitters
 python-dotenv
 requests
 pymupdf                   # PDF handling
+
+google-generativeai

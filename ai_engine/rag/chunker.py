@@ -1,4 +1,6 @@
 from typing import List
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 
 def chunk_text(
         text: str,
@@ -6,25 +8,30 @@ def chunk_text(
         chunk_overlap: int = 200
 ) -> List[str]:
     """
-    Simple text splitter.
-    - sliding window chunks
-    - overlap for context continuity
-    - works well for RAG
+    Split a long text into overlapping chunks using LangChain's
+    RecursiveCharacterTextSplitter. Returns list of strings.
     """
-    text = text.strip().replace("\r\n", "\n")
-    chunks = []
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
 
-    start = 0
-    length = len(text)
-
-    while start < length:
-        end = min(start + chunk_size, length)
-        chunk = text[start:end].strip()
-
-        # move window (with overlap)
-        start = end - chunk_overlap
-        if start < 0:
-            start = 0
-
+    docs = splitter.create_documents([text])
+    chunks = [d.page_content for d in docs]
     return chunks
 
+def chunk_documents(
+        documents: List[Document],
+        chunk_size: int = 800,
+        chunk_overlap: int = 200,
+) -> List[Document]:
+    """
+    Split LangChain Document objects into smaller Documents with preserved metadata. 
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    chunked_docs = splitter.split_documents(documents)
+    return chunked_docs

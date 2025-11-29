@@ -3,6 +3,7 @@ from embeddings.embedder import embed_texts, embed_text
 from vectorstore.vector_store import add_embeddings, search_embeddings
 from rag.chunker import chunk_text
 from llm.llm import generate_answer
+from retriever.retriever import FAISSRetriever
 
 # Index Document into FAISS
 def index_document(
@@ -48,41 +49,29 @@ def answer_query(
         document_ids: Optional[List[int]] = None,
         k: int = 5,
 ) -> Dict[str, Any]:
-    """
-    Main RAG pipeline: 
-    1) Embed user query
-    2) Search FAISS for similar chunks
-    3) Optionally filter results by document_ids
-    4) Build context
-    5) Generate LLM answer
-    """
+    # LangChain-compatible Retriever
+    retriever = FAISSRetriever(
+        k=k,
+        allowed_document_ids=document_ids,
+    )
 
-    # Step 1: Embed query
-    query_embedding = embed_text(query)
+    # Retrieve relevant chunks (langchain Documents)
+    docs = retriever._get_relevant_documents(query)
 
-    # Step 2: Search FAISS (over-retrieve for accuracy)
-    hits = search_embeddings(query_embedding, k=k*3)
+    # Prepare context for LLM
+    context_chunks = [doc.page_content for doc in docs]
 
-    # Step 3: Optional filtering by user-owned docs
-    if document_ids:
-        allowed = set(document_ids)
-        hits = [h for h in hits if h.get("document_id") in allowed]
-
-    # Keep top-k after filtering
-    hits = hits[:k]
-
-    # Extract context text
-    context_chunks = [h["text"] for h in hits]
-
-    # Step 5: Generate answer using LLM
+    # Call Gemini LLM with RAG context
     answer = generate_answer(
         question=query,
         context_chunks=context_chunks,
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
     )
 
-    # Step 6: Return answer + reterieved sources
+    # Extract metdata for frontend UI
+    sources = [doc.metadata for doc in docs]
     return {
         "answer": answer,
-        "sources": hits,
+        "sources": sources,
     }
+
