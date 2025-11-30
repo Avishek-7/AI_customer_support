@@ -6,6 +6,7 @@ pydantic-settings
 
 # LLM
 google-generativeai
+langchain-google-genai
 
 # Embeddings & Vector store
 sentence-transformers

@@ -1,56 +1,37 @@
-import google.generativeai as genai
 from typing import List
+from llm.prompt_template import rag_prompt
 from utils.config import settings
 
-genai.configure(api_key=settings.GOOGLE_API_KEY)
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-def build_prompt(
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash-exp",
+    google_api_key=settings.GOOGLE_API_KEY,
+    temperature=0.1,
+    max_output_tokens=512,
+)
+
+def generate_answer(
         question: str,
         context_chunks: List[str],
         system_prompt: str = "You are an AI customer support assistant."
 ) -> str:
     """
-    Construct the RAG prompt with:
-    - usre-defined system instructions
-    - reterieved context chunks
-    - user's questions 
-    """
-    context_text = "\n\n".join(context_chunks)
-
-    prompt = f"""
-{system_prompt}
-
-You must use ONLY the context below to answer the question.
-If the answer is NOT in the context, reply with:
-"I'm sorry, but the requested information is not available in the provided dcouments." 
-
-Context:
-{context_text}
-
-Question:
-{question}
-
-Answer:
-""".strip()
-    
-    return prompt
-
-def generate_answer(
-        question: str,
-        context_chunks: List[str],
-        system_prompt: str = "You are an AI coustomer support assistan."
-) -> str:
-    """
-    Generate an answer using Google Gemini.
-    Uses the constructed RAG prompt.
+    Generate answer using LangChain + Gemini with proper prompt formatting
     """
 
-    prompt = build_prompt(question, context_chunks, system_prompt)
+    context = "\n\n".join(context_chunks)
+
+    # Format prompt using PromptTemplate
+    formatted_prompt = rag_prompt.format(
+        system_prompt=system_prompt,
+        context=context,
+        question=question,
+    )
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-
-        return response.text
+        result = llm.invoke(formatted_prompt)
+        return result.content
     except Exception as e:
         return f"[ERROR calling Gemini API] {e}"

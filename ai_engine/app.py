@@ -33,9 +33,23 @@ class QueryResponse(BaseModel):
 
 # Routes
 
-@app.post("/")
+@app.get("/")
 def root():
-    return {"status": "AI Engine is running.", "version": "1.0"}
+    """Root endpoint - health check"""
+    return {
+        "status": "AI Engine is running",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "index": "POST /index-document",
+            "query": "POST /query"
+        }
+    }
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "ai-engine"}
 
 # Index Document
 @app.post("/index-document", response_model=IndexDocumentResponse)
