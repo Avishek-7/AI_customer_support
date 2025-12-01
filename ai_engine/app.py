@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-from rag.pipeline import index_document, answer_query
+from rag.pipeline import index_document, answer_query, update_document
+from vectorstore.vector_store import delete_document
 
 app = FastAPI(
     title="AI Engine - RAG Microservice",
@@ -19,6 +20,22 @@ class IndexDocumentRequest(BaseModel):
 class IndexDocumentResponse(BaseModel):
     document_id: int
     chunks_indexed: int
+
+class UpdateDocumentResponse(BaseModel):
+    document_id: int
+    chunks_indexed: int
+
+class UpdateDocumentRequest(BaseModel):
+    document_id: int
+    title: str
+    content: str
+
+class DeleteDocumentRequest(BaseModel):
+    document_id: int
+
+class DeleteDocumentResponse(BaseModel):
+    document_id: int
+    status: str
 
 class QueryRequest(BaseModel):
     query: str
@@ -94,3 +111,40 @@ def query_endpoint(body: QueryRequest):
         answer=result["answer"],
         sources=result["sources"]
     )
+
+# Update Document
+@app.put("/update-document", response_model=IndexDocumentResponse)
+def update_document_endpoint(body: IndexDocumentRequest):
+    """
+    Update an existing document:
+    - delete old embeddings
+    - re-chunk, re-embed, re-index
+    """
+
+    chunks_indexed = update_document(
+        document_id=body.document_id,
+        title=body.title,
+        content=body.content
+    )
+
+    return IndexDocumentResponse(
+        document_id=body.document_id,
+        chunks_indexed=chunks_indexed
+    )
+
+# Delete Document
+@app.delete("/delete-document/{document_id}", response_model=DeleteDocumentResponse)
+def delete_document_endpoint(document_id: int):
+    """
+    Delete document embeddings from FAISS:
+    - removes all chunks for this document_id
+    - rebuilds FAISS index
+    """
+    
+    delete_document(document_id)
+    
+    return DeleteDocumentResponse(
+        document_id=document_id,
+        status="deleted"
+    )
+

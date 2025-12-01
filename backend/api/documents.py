@@ -1,27 +1,24 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List
+import httpx
 from core.database import get_db
-# from core.security import hash_password, verify_password, create_access_token
+from core.config import settings
 from models.user import User
 from core.security import get_current_user
 from models.document import Document
 from schemas.document_schemas import (
-    DocumentBase,
-    DocumentCreate,
     DocumentResponse,
     DocumentListResponse,
     DocumentUpdate,
     DocumentDeleteResponse,
-    DocumentShareRequest,
-    DocumentShareResponse,
     DocumentSearchRequest,
     DocumentSearchResponse,
-    DocumentUpload,
 )
 from utils.pdf_loader import extract_text_from_pdf
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+AI_ENGINE_URL = settings.AI_ENGINE_URL
 
 # ------ Upload Document -----
 @router.post("/upload", response_model=DocumentResponse)
@@ -49,6 +46,23 @@ async def upload_document(
     db.add(document_db)
     db.commit()
     db.refresh(document_db)
+
+    # Call AI Engine to index this document
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(
+                f"{AI_ENGINE_URL}/index-document",
+                json={
+                    "document_id": document_db.id,
+                    "title": document_db.title,
+                    "content": document_db.content,
+                },
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            # You might choose to log this but not fail the whole request
+            print(f"[AI ENGINE ERROR - index-document] {e}")
 
     return document_db
 
@@ -81,7 +95,7 @@ def get_document(
 
 # ------ Update Document -----
 @router.put("/{doc_id}", response_model=DocumentResponse)
-def update_document(
+async def update_document(
     doc_id: int,
     update_data: DocumentUpdate,
     db: Session = Depends(get_db),
@@ -104,12 +118,28 @@ def update_document(
 
     db.commit()
     db.refresh(doc)
+
+    # Tell AI Engine to re-index this updated document
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.put(
+                f"{AI_ENGINE_URL}/update-document",
+                json={
+                    "document_id": doc.id,
+                    "title": doc.title,
+                    "content": doc.content,
+                },
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"[AI ENGINE ERROR - update-document] {e}")
     
     return doc
 
 # ------ Delete Document -----
 @router.delete("/{doc_id}", response_model=DocumentDeleteResponse)
-def delete_document(
+async def delete_document(
     doc_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -123,6 +153,18 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
+    # Delete from AI Engine FAISS index
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.delete(
+                f"{AI_ENGINE_URL}/delete-document/{doc.id}",
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"[AI ENGINE ERROR - delete-document] {e}")
+    
+    # Delete from database
     db.delete(doc)
     db.commit()
 
