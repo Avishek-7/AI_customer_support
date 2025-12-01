@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from embeddings.embedder import embed_texts, embed_text
-from vectorstore.vector_store import add_embeddings, search_embeddings
+from vectorstore.vector_store import add_embeddings, delete_document
 from rag.chunker import chunk_text
 from llm.llm import generate_answer
 from retriever.retriever import FAISSRetriever
@@ -38,6 +38,46 @@ def index_document(
         )
 
     # Step 4: Add to FAISS
+    add_embeddings(embeddings, metadatas)
+
+    return len(chunks)
+
+# Update Document (Delete + Re-index)
+def update_document(
+        document_id: int,
+        title: str,
+        content: str,
+) -> int:
+    """
+    Full update workflow:
+    - delete old FAISS entries
+    - re-chunk the new content
+    - re-embed
+    - re-index new embeddings
+    """
+
+    # Delete all old chunks for this document
+    delete_document(document_id)
+    
+    # Re-chunk
+    chunks = chunk_text(content)
+    if not chunks: 
+        return 0
+    
+    # Re-embed
+    embeddings = embed_texts(chunks)
+
+    # Re-store into FAISS
+    metadatas: List[Dict[str, Any]] =[]
+    for idx, chunk in enumerate(chunks):
+        metadatas.append(
+            {
+                "document_id": document_id,
+                "chunk_id": idx,
+                "title": title,
+                "text": chunk,
+            }
+        )
     add_embeddings(embeddings, metadatas)
 
     return len(chunks)

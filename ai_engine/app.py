@@ -72,7 +72,6 @@ def index_document_endpoint(body: IndexDocumentRequest):
         chunks_indexed=chunks_indexed
     )
 
-
 # Query RAG Pipeline
 @app.post("/query", response_model=QueryResponse)
 def query_endpoint(body: QueryRequest):

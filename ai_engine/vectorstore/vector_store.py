@@ -72,6 +72,44 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
     metadata.extend(metadatas)
     save_index_and_metadata(index, metadata)
 
+# Delete all chunks of a single document
+def delete_document(document_id: int) -> None:
+    """
+    Delete all FAISS vectors belonging to a document.
+    Rebuilds FAISS index by re-embedding remaining documents.
+    """
+    from embeddings.embedder import embed_texts
+    
+    index, metadata = load_index_and_metadata()
+
+    # Filter out metadata for this document
+    new_metadata = [m for m in metadata if m["document_id"] != document_id]
+
+    # If nothing changed, do nothing
+    if len(new_metadata) == len(metadata):
+        return
+    
+    # Rebuild FAISS from scratch by re-embedding
+    rebuild_index(new_metadata)
+
+# Rebuild FAISS Index (used after deletion and updates)
+def rebuild_index(metadata: List[Dict[str, Any]]) -> None:
+    """
+    Rebuild FAISS index from metadata by re-embedding text content.
+    This is necessary because embeddings are stored in FAISS, not metadata.
+    """
+    from embeddings.embedder import embed_texts
+    
+    new_index = _empty_index()
+
+    if len(metadata) > 0:
+        # Extract text from metadata and re-embed
+        texts = [m["text"] for m in metadata]
+        embeddings = embed_texts(texts)
+        new_index.add(embeddings)
+
+    save_index_and_metadata(new_index, metadata)
+
 
 # Search
 def search_embeddings(query_embedding: np.ndarray, k: int = 5) -> List[Dict[str, Any]]:
