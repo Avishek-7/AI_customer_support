@@ -38,6 +38,7 @@ class DeleteDocumentResponse(BaseModel):
     status: str
 
 class QueryRequest(BaseModel):
+    session_id: str
     query: str
     system_prompt: Optional[str] = "You are an AI customer support assistant."
     document_ids: Optional[List[int]] = None
@@ -102,6 +103,7 @@ def query_endpoint(body: QueryRequest):
 
     result = answer_query(
         query=body.query,
+        session_id=body.session_id,
         system_prompt=body.system_prompt,
         document_ids=body.document_ids,
         k=body.k,

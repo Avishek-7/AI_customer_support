@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from llm.prompt_template import rag_prompt
 from utils.config import settings
 
@@ -13,9 +13,10 @@ llm = ChatGoogleGenerativeAI(
 )
 
 def generate_answer(
-        question: str,
-        context_chunks: List[str],
-        system_prompt: str = "You are an AI customer support assistant."
+    question: str,
+    context_chunks: List[str],
+    system_prompt: str = "You are an AI customer support assistant.",
+    chat_history: Optional[str] = ""
 ) -> str:
     """
     Generate answer using LangChain + Gemini with proper prompt formatting
@@ -23,11 +24,12 @@ def generate_answer(
 
     context = "\n\n".join(context_chunks)
 
-    # Format prompt using PromptTemplate
+    # Format prompt using PromptTemplate (include chat history)
     formatted_prompt = rag_prompt.format(
         system_prompt=system_prompt,
         context=context,
         question=question,
+        chat_history=chat_history or "",
     )
 
     try:

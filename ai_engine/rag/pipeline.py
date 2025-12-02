@@ -3,6 +3,7 @@ from embeddings.embedder import embed_texts, embed_text
 from vectorstore.vector_store import add_embeddings, delete_document
 from rag.chunker import chunk_text
 from llm.llm import generate_answer
+from llm.memory import get_memory
 from retriever.retriever import FAISSRetriever
 
 # Index Document into FAISS
@@ -85,10 +86,16 @@ def update_document(
 # Answer Query using RAG (Gemini + FAISS)
 def answer_query(
         query: str,
+        session_id: str,
         system_prompt: str = "You are an AI customer support assistant.",
         document_ids: Optional[List[int]] = None,
         k: int = 5,
 ) -> Dict[str, Any]:
+    
+    # Get memory for session/user
+    memory = get_memory(session_id)
+    history = memory.load_memory_variables({}).get("chat_history", [])
+
     # LangChain-compatible Retriever
     retriever = FAISSRetriever(
         k=k,
@@ -101,11 +108,24 @@ def answer_query(
     # Prepare context for LLM
     context_chunks = [doc.page_content for doc in docs]
 
+    # Render chat history to text for the LLM prompt
+    history_text = "\n".join(
+        f"User: {m.content}" if getattr(m, "type", "") == "human" else f"Assistant: {getattr(m, 'content', m)}"
+        for m in history
+    ) if history else ""
+
     # Call Gemini LLM with RAG context
     answer = generate_answer(
         question=query,
         context_chunks=context_chunks,
         system_prompt=system_prompt,
+        chat_history=history_text,
+    )
+
+    # Save conversation to memory
+    memory.save_context(
+        {"input": query},
+        {"output": answer}
     )
 
     # Extract metdata for frontend UI
