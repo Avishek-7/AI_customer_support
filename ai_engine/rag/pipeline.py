@@ -3,7 +3,7 @@ from embeddings.embedder import embed_texts, embed_text
 from vectorstore.vector_store import add_embeddings, delete_document
 from rag.chunker import chunk_text
 from llm.llm import generate_answer
-from llm.memory import get_memory
+from llm.memory import get_memory, save_turn
 from retriever.retriever import FAISSRetriever
 
 # Index Document into FAISS
@@ -94,7 +94,7 @@ def answer_query(
     
     # Get memory for session/user
     memory = get_memory(session_id)
-    history = memory.load_memory_variables({}).get("chat_history", [])
+    history = memory.messages  # InMemoryChatHistory stores messages directly
 
     # LangChain-compatible Retriever
     retriever = FAISSRetriever(
@@ -123,10 +123,7 @@ def answer_query(
     )
 
     # Save conversation to memory
-    memory.save_context(
-        {"input": query},
-        {"output": answer}
-    )
+    save_turn(session_id, user_message=query, ai_message=answer)
 
     # Extract metdata for frontend UI
     sources = [doc.metadata for doc in docs]
