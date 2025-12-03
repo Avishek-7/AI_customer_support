@@ -11,3 +11,5 @@ class User(Base):
     password_hash = Column(String)
     
     documents = relationship("Document", back_populates="owner")
+    chats = relationship("Chat", back_populates="user")
+    
