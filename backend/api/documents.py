@@ -122,7 +122,7 @@ async def update_document(
     # Tell AI Engine to re-index this updated document
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.put(
+            resp = await client.post(
                 f"{AI_ENGINE_URL}/update-document",
                 json={
                     "document_id": doc.id,
@@ -156,9 +156,9 @@ async def delete_document(
     # Delete from AI Engine FAISS index
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.delete(
-                f"{AI_ENGINE_URL}/delete-document/{doc.id}",
-                timeout=30.0,
+            resp = await client.post(
+                f"{AI_ENGINE_URL}/delete-document",
+                json={"document_id": doc.id}
             )
             resp.raise_for_status()
         except Exception as e:

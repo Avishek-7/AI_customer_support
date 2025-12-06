@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
@@ -79,3 +80,32 @@ async def chat_with_ai(
         answer=data["answer"],
         sources=data["sources"]
     )
+
+@router.post("/stream")
+async def chat_stream(
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Get user's indexed documents
+    docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
+    document_ids = [d.id for d in docs]
+
+    # SSE generator
+    async def event_generator():
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                f"{AI_ENGINE_URL}/stream",
+                json={
+                    "query": body.message,
+                    "session_id": str(current_user.id),
+                    "system_prompt": body.system_prompt,
+                    "document_ids": document_ids,
+                },
+                timeout=None,
+            ) as stream:
+                async for chunk in stream.aiter_lines():
+                    if chunk.strip():
+                        yield f"data: {chunk}\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
