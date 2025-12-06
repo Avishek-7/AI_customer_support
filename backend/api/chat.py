@@ -9,6 +9,8 @@ from core.security import get_current_user
 from core.config import settings
 from models.user import User
 from models.document import Document
+from models.chat import ChatHistory
+from schemas.chat_schema import ChatHistoryList, ChatHistoryItem
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -109,3 +111,27 @@ async def chat_stream(
                     if chunk.strip():
                         yield f"data: {chunk}\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# Save chat after normal or streaming response
+def save_chat_to_db(user_id: int, question: str, answer: str, db: Session):
+    history = ChatHistory(
+        user_id=user_id,
+        message=question,
+        response=answer,
+    )
+    db.add(history)
+    db.commit()
+
+# Get past chats
+@router.get("/history", response_model=ChatHistoryList)
+def get_chat_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    chats = (
+        db.query(ChatHistory)
+        .filter(ChatHistory.user_id == current_user.id)
+        .order_by(ChatHistory.id.desc())
+        .all()
+    )
+    return ChatHistoryList(history=chats)

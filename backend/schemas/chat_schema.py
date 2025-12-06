@@ -18,3 +18,15 @@ class ChatSessionResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class ChatHistoryItem(BaseModel):
+    id: int
+    message: str
+    response: str
+    timestamp: str
+
+    class Config:
+        orm_mode = True
+
+class ChatHistoryList(BaseModel):
+    history: List[ChatHistoryItem]
