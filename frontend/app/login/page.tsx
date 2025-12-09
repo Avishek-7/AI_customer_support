@@ -14,8 +14,8 @@ export default function LoginPage() {
         });
 
         const data = await response.json();
-        if (data.token) {
-            localStorage.setItem("token", data.token);
+        if (data.access_token) {
+            localStorage.setItem("token", data.access_token);
             window.location.href = "/chat";
         }
     };

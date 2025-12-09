@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 class ChatMessage(BaseModel):
     role: str  # 'user' or 'assistant'
@@ -18,6 +18,11 @@ class ChatSessionResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+# class ChatSessionRequest(BaseModel):
+#     message: str
+#     system_prompt: Optional[str] = "You are an AI customer support assistant."
+#     document_ids: Optional[List[int]] = None
 
 class ChatHistoryItem(BaseModel):
     id: int

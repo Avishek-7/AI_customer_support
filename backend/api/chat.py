@@ -20,6 +20,7 @@ AI_ENGINE_URL = settings.AI_ENGINE_URL
 class ChatRequest(BaseModel):
     message: str
     system_prompt: Optional[str] = "You are an AI customer support assistant."
+    document_ids: Optional[List[int]] = None
 
 class ChatResponse(BaseModel):
     answer: str
@@ -39,10 +40,20 @@ async def chat_with_ai(
     3. Return answer + citations
     """
     
-    # Fetch user's documents from DB
-    user_docs = (
-        db.query(Document)
-        .filter(Document.owner_id == current_user.id)
+    if body.document_ids:
+        user_docs = (
+            db.query(Document)
+            .filter(
+                Document.owner_id == current_user.id,
+                Document.id.in_(body.document_ids)
+            )
+            .all()
+        )
+    else:
+        # Fetch user's documents from DB
+        user_docs = (
+            db.query(Document)
+            .filter(Document.owner_id == current_user.id)
         .all()
     )
 
