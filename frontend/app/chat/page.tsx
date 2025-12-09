@@ -5,12 +5,19 @@ import ChatBubble from "./../../components/ChatBubble";
 import ChatInput from "./../../components/ChatInput";
 
 export default function ChatPage() {
-    const [message, setMessage] = useState<{ role: "user" | "assistant", content: string }[]>([]);
+    const [message, setMessage] = useState<{ role: "user" | "assistant", content: string, sources?: any[] }[]>([]);
     const chatRef = useRef<HTMLDivElement>(null);
 
     // Auto scroll
+    // Check authentication once on mount
     useEffect(() => {
-        chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth"});
+        const token = localStorage.getItem("token");
+        if (!token) window.location.href = "/login";
+    }, []);
+
+    // Auto scroll when messages change
+    useEffect(() => {
+        chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
     }, [message]);
 
     const handleSend = async (message: string) => {
@@ -22,7 +29,7 @@ export default function ChatPage() {
         // Streaming Response
         const response = await fetch("http://localhost:8000/chat/stream", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}`},
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
             body: JSON.stringify({ message }),
         });
 
@@ -35,6 +42,7 @@ export default function ChatPage() {
             if (done) break;
 
             const chunk = decoder.decode(value, { stream: true });
+            aiResponse += chunk;
 
             // Live streaming token-by-token rendering
             setMessage(prev => {
@@ -42,7 +50,7 @@ export default function ChatPage() {
                 if (updated[updated.length - 1]?.role === "assistant") {
                     updated[updated.length - 1].content = aiResponse;
                 } else {
-                    updated.push({ role: "assistant", content: aiResponse });
+                    updated.push({ role: "assistant", content: aiResponse, sources: [] });
                 }
                 return updated;
             });
