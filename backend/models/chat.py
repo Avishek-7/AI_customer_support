@@ -10,7 +10,7 @@ class Chat(Base):
     response = Column(String)
 
     user = relationship("User", back_populates="chats")
-    documents = relationship("Document", back_populates="owner")
+    documents = relationship("Document", back_populates="chat")
     
 class ChatHistory(Base):
     __tablename__ = "chat_history"

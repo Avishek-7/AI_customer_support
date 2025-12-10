@@ -4,16 +4,41 @@ import { useState, useRef, useEffect } from "react";
 import ChatBubble from "./../../components/ChatBubble";
 import ChatInput from "./../../components/ChatInput";
 
+type Message = {
+    role: "user" | "assistant";
+    content: string;
+    sources?: { title: string; chunk_id: number }[];
+}
+
+type DocumentItem = { id: number; title: string };
+
 export default function ChatPage() {
-    const [message, setMessage] = useState<{ role: "user" | "assistant", content: string, sources?: any[] }[]>([]);
+    const [message, setMessage] = useState<Message[]>([]);
+    const [docs, setDocs] = useState<DocumentItem[]>([]);
+    const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
     const chatRef = useRef<HTMLDivElement>(null);
+
+    const API_BASE = "http://localhost:8000";
+    const token = 
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     // Auto scroll
     // Check authentication once on mount
     useEffect(() => {
-        const token = localStorage.getItem("token");
-        if (!token) window.location.href = "/login";
-    }, []);
+        if (!token) {
+            window.location.href = "/login";
+            return;
+        }
+
+        const fetchDocs = async () => {
+            const res = await fetch(`${API_BASE}/documents`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setDocs(data.documents ?? []);
+        };
+        fetchDocs();
+    }, [token]);
 
     // Auto scroll when messages change
     useEffect(() => {
@@ -21,16 +46,19 @@ export default function ChatPage() {
     }, [message]);
 
     const handleSend = async (message: string) => {
-        if (!message.trim()) return;
+        if (!message.trim() || !token) return;
 
         // Show user message instantly
         setMessage(prev => [...prev, { role: "user", content: message }]);
 
         // Streaming Response
-        const response = await fetch("http://localhost:8000/chat/stream", {
+        const response = await fetch(`${API_BASE}/chat/stream`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem("token")}` },
-            body: JSON.stringify({ message }),
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({
+                message, 
+                document_ids: selectedDocIds.length ? selectedDocIds : undefined,
+            }),
         });
 
         const reader = response.body?.getReader();
@@ -47,8 +75,10 @@ export default function ChatPage() {
             // Live streaming token-by-token rendering
             setMessage(prev => {
                 const updated = [...prev];
-                if (updated[updated.length - 1]?.role === "assistant") {
-                    updated[updated.length - 1].content = aiResponse;
+                const last = updated[updated.length - 1];
+
+                if (last && last.role === "assistant") {
+                    last.content = aiResponse;
                 } else {
                     updated.push({ role: "assistant", content: aiResponse, sources: [] });
                 }
@@ -58,18 +88,72 @@ export default function ChatPage() {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-gray-900 text-white">
-            <div className="p-4 text-2xl font-bold border-b border-gray-700">
-                AI Support Chat
-            </div>
-
-            <div ref={chatRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
-                {message.map((msg, i) => (
-                    <ChatBubble key={i} role={msg.role} content={msg.content} />
+        <div className="flex h-screen bg-gray-900 text-white">
+            {/* Sidebar for documents */}
+            <aside className="w-64 border-r border-gray-800 p-4 flex flex-col gap-3 bg-gray-950">
+            <h2 className="font-semibold mb-2">Documents</h2>
+            {docs.length === 0 ? (
+                <p className="text-xs text-gray-400">No documents. Upload on /documents</p>
+            ) : (
+                <div className="space-y-2 text-sm">
+                {docs.map((doc) => (
+                    <label key={doc.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="accent-blue-500"
+                        checked={selectedDocIds.includes(doc.id)}
+                        onChange={(e) => {
+                        setSelectedDocIds((prev) =>
+                            e.target.checked
+                            ? [...prev, doc.id]
+                            : prev.filter((id) => id !== doc.id)
+                        );
+                        }}
+                    />
+                    <span className="truncate">{doc.title}</span>
+                    </label>
                 ))}
-            </div>
+                </div>
+            )}
 
-            <ChatInput onSend={handleSend} />
+            <p className="mt-auto text-[11px] text-gray-500">
+                Only selected docs will be used in answers. If none selected, all docs
+                are used.
+            </p>
+            </aside>
+
+            {/* Main chat area */}
+            <div className="flex flex-col flex-1">
+                {/* Header */}
+                <div className="border-b border-gray-800 p-4">
+                    <h1 className="text-2xl font-bold">Chat</h1>
+                    <p className="text-sm text-gray-400">
+                        {selectedDocIds.length > 0
+                            ? `Using ${selectedDocIds.length} document${selectedDocIds.length !== 1 ? "s" : ""}`
+                            : "Using all documents"}
+                    </p>
+                </div>
+
+                {/* Messages */}
+                <div
+                    ref={chatRef}
+                    className="flex-1 overflow-y-auto p-4 space-y-4"
+                >
+                    {message.length === 0 && (
+                        <div className="flex items-center justify-center h-full text-gray-400">
+                            <p>Start a conversation...</p>
+                        </div>
+                    )}
+                    {message.map((msg, i) => (
+                        <ChatBubble key={i} role={msg.role} content={msg.content} sources={msg.sources} />
+                    ))}
+                </div>
+
+                {/* Input */}
+                <div className="border-t border-gray-800 p-4">
+                    <ChatInput onSend={handleSend} />
+                </div>
+            </div>
         </div>
     );
 }
