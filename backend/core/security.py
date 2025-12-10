@@ -9,19 +9,54 @@ from models.user import User
 from core.config import settings
 
 # Password hashing
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 # OAuth2 scheme (reads Authorization: Bearer <token> header)
 oauth_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 # ------ Password Hashing -----
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """Hash password using bcrypt. Safely handles 72-byte limit.
+    
+    Returns hashed password as string.
+    """
+    # Ensure password is a string
+    if not isinstance(password, str):
+        password = str(password)
+    
+    # Convert to bytes and truncate to 72 bytes
+    password_bytes = password.encode('utf-8')[:72]
+    
+    if not password_bytes:
+        raise ValueError("Password cannot be empty")
+    
+    # Hash with bcrypt (rounds=12 is the default)
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    
+    # Return as string for database storage
+    return hashed.decode('utf-8')
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify password against bcrypt hash."""
+    # Ensure plain_password is a string
+    if not isinstance(plain_password, str):
+        plain_password = str(plain_password)
+    
+    # Truncate to 72 bytes like hash_password does
+    password_bytes = plain_password.encode('utf-8')[:72]
+    
+    if not password_bytes:
+        return False
+    
+    # Ensure hashed_password is bytes
+    if isinstance(hashed_password, str):
+        hashed_password = hashed_password.encode('utf-8')
+    
+    try:
+        return bcrypt.checkpw(password_bytes, hashed_password)
+    except Exception:
+        return False
 
 # ------ JWT Token creation -----
 def create_access_token(data: dict) -> str:

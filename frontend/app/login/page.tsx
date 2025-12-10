@@ -14,14 +14,18 @@ export default function LoginPage() {
         });
 
         const data = await response.json();
-        if (data.access_token) {
-            localStorage.setItem("token", data.access_token);
+        if (data.token) {
+            localStorage.setItem("token", data.token);
             window.location.href = "/chat";
+        } else if (data.detail) {
+            alert(data.detail);
+        } else {
+            alert("Login failed");
         }
     };
 
     return (
-        <div className="flex item-center justify-center h-screen bg-gray-900 text-white">
+        <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
             <div className="bg-gray-800 p-6 rounded-lg w-80 space-y-4">
                 <h2 className="text-xl font-semibold">Login</h2>
 

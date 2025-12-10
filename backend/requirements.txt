@@ -10,7 +10,7 @@ alembic                  # DB migrations
 
 # === Auth & Security ===
 python-jose[cryptography]
-passlib[bcrypt]
+bcrypt
 python-multipart         # For file uploads
 
 # === Environment Variables ===

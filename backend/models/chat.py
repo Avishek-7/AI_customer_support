@@ -21,4 +21,5 @@ class ChatHistory(Base):
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="chat_history")
+
     
