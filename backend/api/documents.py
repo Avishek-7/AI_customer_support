@@ -13,6 +13,7 @@ from schemas.document_schemas import (
     DocumentDeleteResponse,
     DocumentSearchRequest,
     DocumentSearchResponse,
+    DocumentStatusUpdateRequest,
 )
 from utils.pdf_loader import extract_text_from_pdf
 
@@ -190,3 +191,42 @@ def search_documents(
 
     return DocumentSearchResponse(documents=docs)
 
+
+# ------ Update Document Status from AI Engine -----
+@router.post("/update-status")
+def update_document_status(
+    body: DocumentStatusUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    doc = db.query(Document).filter(Document.id == body.document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    doc.status = body.status
+    
+    if body.chunk_count is not None:
+        doc.chunk_count = body.chunk_count
+
+    db.commit()
+    return {"detail": "Status updated"}
+
+
+@router.post("/status/{doc_id}")
+def get_document_status(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc = (
+        db.query(Document)
+        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return {
+        "document_id": doc.id,
+        "status": doc.index_status,
+        "chunk_count": doc.chunk_count
+    }

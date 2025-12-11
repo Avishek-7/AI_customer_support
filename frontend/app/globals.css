@@ -27,3 +27,7 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.prose pre {
+  @apply bg-gray-800 p-3 rounded-md overflow-auto;
+}

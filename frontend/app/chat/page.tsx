@@ -10,6 +10,34 @@ type Message = {
     sources?: { title: string; chunk_id: number }[];
 }
 
+const updateAssistantToken = (prev: Message[], token: string): Message[] => {
+    const updated = [...prev];
+    const last = updated[updated.length - 1];
+
+    if (!last || last.role !== "assistant") {
+        updated.push({ role: "assistant", content: token, sources: [] });
+        return updated;
+    }
+
+    last.content += token;
+    return updated;
+};
+
+const updateAssistantSources = (
+    prev: Message[],
+    sources: { title?: string; chunk_id?: number }[]
+): Message[] => {
+    const updated = [...prev];
+    const last = updated[updated.length - 1];
+    if (!last || last.role !== "assistant") return updated;
+
+    last.sources = (sources || []).map((src) => ({
+        title: src.title ?? "Untitled",
+        chunk_id: src.chunk_id ?? 0,
+    }));
+    return updated;
+};
+
 type DocumentItem = { id: number; title: string };
 
 export default function ChatPage() {
@@ -63,27 +91,37 @@ export default function ChatPage() {
 
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
-        let aiResponse = "";
+        // let aiResponse = "";
+        let buffer = "";
 
         while (true) {
             const { done, value } = await reader!.read();
             if (done) break;
 
+            buffer += new TextDecoder().decode(value)
+
             const chunk = decoder.decode(value, { stream: true });
-            aiResponse += chunk;
+            const lines = buffer.split("\n")
+            buffer = lines.pop() || "";
+            // aiResponse += chunk;
 
-            // Live streaming token-by-token rendering
-            setMessage(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
+            for (const line of lines) {
+                if (!line.trim()) continue;
 
-                if (last && last.role === "assistant") {
-                    last.content = aiResponse;
-                } else {
-                    updated.push({ role: "assistant", content: aiResponse, sources: [] });
+                const event = JSON.parse(line);
+                if (event.type === "token") {
+                    setMessage((prev) => updateAssistantToken(prev, event.content));
                 }
-                return updated;
-            });
+
+                if (event.type === "final") {
+                    setMessage((prev) => updateAssistantSources(prev, event.sources));
+                } 
+
+                if (event.type === "error") {
+                    console.error("Error from stream:", event.message);
+                }
+            }
+
         }
     };
 

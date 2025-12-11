@@ -9,7 +9,8 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash-exp",
     google_api_key=settings.GOOGLE_API_KEY,
     temperature=0.1,
-    max_output_tokens=512,
+    max_output_tokens=1024,
+    streaming=True
 )
 
 def generate_answer(
@@ -37,3 +38,17 @@ def generate_answer(
         return result.content
     except Exception as e:
         return f"[ERROR calling Gemini API] {e}"
+    
+async def stream_llm_answer(question, context_chunks, system_prompt):
+    context = "\n\n".join(context_chunks)
+
+    prompt = rag_prompt.format(
+        system_prompt=system_prompt,
+        context=context,
+        question=question
+    )
+
+    # yield tokens as soon as they are generated
+    async for chunk in llm.astream(prompt):
+        if chunk.content:
+            yield chunk.content

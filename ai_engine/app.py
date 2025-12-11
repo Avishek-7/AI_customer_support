@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+import json
 
-from rag.pipeline import index_document, answer_query, update_document
+from rag.pipeline import index_document, answer_query, update_document, answer_query_stream
 from vectorstore.vector_store import delete_document
 
 app = FastAPI(
@@ -71,7 +73,7 @@ def health_check():
 
 # Index Document
 @app.post("/index-document", response_model=IndexDocumentResponse)
-def index_document_endpoint(body: IndexDocumentRequest):
+async def index_document_endpoint(body: IndexDocumentRequest, background_task: BackgroundTasks):
     """
     Index a new document:
     - chunk the content
@@ -79,15 +81,22 @@ def index_document_endpoint(body: IndexDocumentRequest):
     - store embeddings + metadata in FAISS 
     """
 
-    chunks_indexed = index_document(
-        document_id=body.document_id,
-        title=body.title,
-        content=body.content
+    background_task.add_task(
+        index_document,
+        body.document_id,
+        body.title,
+        body.content
     )
+
+    # chunks_indexed = await index_document(
+    #     document_id=body.document_id,
+    #     title=body.title,
+    #     content=body.content
+    # )
 
     return IndexDocumentResponse(
         document_id=body.document_id,
-        chunks_indexed=chunks_indexed
+        chunks_indexed=0  # indexing still running
     )
 
 # Query RAG Pipeline
@@ -150,3 +159,15 @@ def delete_document_endpoint(document_id: int):
         status="deleted"
     )
 
+@app.post("/stream")
+async def stream_answer(body: QueryRequest):
+    async def event_generator():
+        try:
+            async for event in answer_query_stream(body):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            error_data = {"type": "error", "message": str(e)}
+            yield f"data: {json.dumps(error_data)}\n\n"
+        finally:
+            yield f"data: {json.dumps({"type": "end"})}\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -38,6 +38,11 @@ class DocumentSearchRequest(BaseModel):
 class DocumentSearchResponse(BaseModel):
     documents: List[DocumentResponse]
 
+class DocumentStatusUpdateRequest(BaseModel):
+    document_id: int
+    status: str
+    chunk_count: Optional[int] = None
+
 
 
 

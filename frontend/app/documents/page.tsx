@@ -16,6 +16,8 @@ export default function DocumentsPage() {
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [indexStatus, setIndexStatus] = useState<string | null>(null);
+    const [chunkCount, setChunkCount] = useState<number | null>(null);
 
     const API_BASE = "http://localhost:8000";
 
@@ -65,9 +67,17 @@ export default function DocumentsPage() {
                 throw new Error(err.message || "Upload failed");
             }
 
+            const data = await res.json();
+            const docId = data.document_id || data.id;
+
             setTitle("");
             setFile(null);
             await fetchDocs();
+
+            // Start polling for index status
+            if (docId) {
+                pollIndexStatus(docId);
+            }
         } catch (err: any) {
             console.error(err);
             setError(err.message || "Upload failed.");
@@ -75,6 +85,38 @@ export default function DocumentsPage() {
             setUploading(false);
         }
     };
+
+    const pollIndexStatus = async (docId: number) => {
+        if (!token) return;
+
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE}/documents/status/${docId}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const status = await res.json();
+
+                setIndexStatus(status.status);
+                setChunkCount(status.chunk_count);
+
+                if (status.status === "completed") {
+                    clearInterval(interval);
+                    setIndexStatus(null);
+                    setChunkCount(null);
+                    await fetchDocs();
+                }
+
+                if (status.status === "failed") {
+                    clearInterval(interval);
+                    setError("Document indexing failed");
+                    setIndexStatus(null);
+                    setChunkCount(null);
+                }
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        }, 2000); // Poll every 2 seconds
+    }
 
     return (
         <div className="min-h-screen bg-gray-900 text-white p-6 space-y-6">
@@ -97,6 +139,12 @@ export default function DocumentsPage() {
             />
             {uploading && (
             <p className="text-sm text-yellow-400">Uploading & indexing…</p>
+            )}
+            {indexStatus && (
+            <p className="text-sm text-blue-400">
+                Index status: {indexStatus}
+                {chunkCount !== null && ` (${chunkCount} chunks)`}
+            </p>
             )}
             {error && <p className="text-sm text-red-400">{error}</p>}
             <button
