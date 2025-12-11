@@ -100,9 +100,18 @@ async def chat_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Get user's indexed documents
-    docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
-    document_ids = [d.id for d in docs]
+    # Use selected document_ids from request, or fall back to all user docs
+    if body.document_ids:
+        # Validate that user owns these documents
+        docs = db.query(Document).filter(
+            Document.owner_id == current_user.id,
+            Document.id.in_(body.document_ids)
+        ).all()
+        document_ids = [d.id for d in docs]
+    else:
+        # No selection - use all user's documents
+        docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
+        document_ids = [d.id for d in docs]
 
     # SSE generator
     async def event_generator():
@@ -120,7 +129,8 @@ async def chat_stream(
             ) as stream:
                 async for chunk in stream.aiter_lines():
                     if chunk.strip():
-                        yield f"data: {chunk}\n\n"
+                        # Pass through as-is; AI engine already formats as "data: {...}"
+                        yield chunk + "\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # Save chat after normal or streaming response

@@ -12,9 +12,11 @@ class DocumentUpload(BaseModel):
 class DocumentResponse(DocumentBase):
     id: int
     owner_id: int
+    index_status: str = "pending"
+    chunk_count: int = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DocumentListResponse(BaseModel):
     documents: List[DocumentResponse]

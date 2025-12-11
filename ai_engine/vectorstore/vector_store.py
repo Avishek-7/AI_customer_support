@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import faiss
 from embeddings.embedder import EMBEDDING_DIM
@@ -112,9 +112,14 @@ def rebuild_index(metadata: List[Dict[str, Any]]) -> None:
 
 
 # Search
-def search_embeddings(query_embedding: np.ndarray, k: int = 5) -> List[Dict[str, Any]]:
+def search_embeddings(
+    query_embedding: np.ndarray, 
+    k: int = 5,
+    document_ids: Optional[List[int]] = None
+) -> List[Dict[str, Any]]:
     """
     Search FAISS index. Returns list of metadata dicts with added score.
+    Optionally filter by document_ids.
     """
     index, metadata = load_index_and_metadata()
     
@@ -123,7 +128,11 @@ def search_embeddings(query_embedding: np.ndarray, k: int = 5) -> List[Dict[str,
     
     query_embedding = query_embedding.reshape(1, -1).astype("float32")
 
-    distances, indices = index.search(query_embedding, k)
+    # If filtering, retrieve more candidates to ensure we get enough after filtering
+    search_k = k * 4 if document_ids else k
+    search_k = min(search_k, index.ntotal)  # Don't exceed total docs
+    
+    distances, indices = index.search(query_embedding, search_k)
 
     results = []
     for dist, idx in zip(distances[0], indices[0]):
@@ -131,7 +140,16 @@ def search_embeddings(query_embedding: np.ndarray, k: int = 5) -> List[Dict[str,
             continue
 
         item = metadata[idx].copy()
+        
+        # Filter by document_ids if specified
+        if document_ids and item.get("document_id") not in document_ids:
+            continue
+            
         item["score"] = float(dist)
         results.append(item)
+        
+        # Stop once we have enough results
+        if len(results) >= k:
+            break
 
     return results

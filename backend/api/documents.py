@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 import httpx
 from core.database import get_db
@@ -24,7 +24,7 @@ AI_ENGINE_URL = settings.AI_ENGINE_URL
 # ------ Upload Document -----
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
-    title: str,
+    title: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -202,7 +202,7 @@ def update_document_status(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    doc.status = body.status
+    doc.index_status = body.status
     
     if body.chunk_count is not None:
         doc.chunk_count = body.chunk_count
@@ -211,7 +211,7 @@ def update_document_status(
     return {"detail": "Status updated"}
 
 
-@router.post("/status/{doc_id}")
+@router.get("/status/{doc_id}")
 def get_document_status(
     doc_id: int,
     db: Session = Depends(get_db),
@@ -227,6 +227,6 @@ def get_document_status(
     
     return {
         "document_id": doc.id,
-        "status": doc.index_status,
-        "chunk_count": doc.chunk_count
+        "status": doc.index_status or "pending",
+        "chunk_count": doc.chunk_count or 0
     }

@@ -53,7 +53,8 @@ export default function ChatPage() {
         const copy = [...prev];
         const last = copy[copy.length - 1];
         if (last && last.role === "assistant") {
-            last.content = chunk;
+            // APPEND chunk to existing content, don't overwrite
+            last.content += chunk;
         } else {
             copy.push({ role: "assistant", content: chunk });
         }
@@ -106,28 +107,37 @@ export default function ChatPage() {
         if (!line.trim()) continue;
         
         try {
-            const event = JSON.parse(line);
+            // Parse SSE format - lines starting with "data: "
+            if (!line.startsWith("data: ")) continue;
+            
+            const jsonStr = line.slice(6); // Remove "data: " prefix
+            const event = JSON.parse(jsonStr);
+            
             if (event.type === "token") {
-                upsertAssistantChunk(event.token);
+                // AI engine sends content, not token
+                upsertAssistantChunk(event.content);
             }       
-        else if (event.type === "final") {
-            // attach final sources to the last assistant message
-            finalSources = event.sources ?? [];
-            setMessages((prev) => {
-                const copy = [...prev];
-                const last = copy[copy.length - 1];
-                if (last && last.role === "assistant") {
-                    last.sources = finalSources
-                }
-                return copy;
-            });
-        }
-
-          else if (event.type === "error") {
-            setMessages((p) => [...p, { role: "assistant", content: `Error: ${event.message}` }]);
-          }
+            else if (event.type === "sources") {
+                // attach sources to the last assistant message
+                finalSources = event.sources ?? [];
+                setMessages((prev) => {
+                    const copy = [...prev];
+                    const last = copy[copy.length - 1];
+                    if (last && last.role === "assistant") {
+                        last.sources = finalSources
+                    }
+                    return copy;
+                });
+            }
+            else if (event.type === "end") {
+                // Stream has ended
+                console.log("Stream ended");
+            }
+            else if (event.type === "error") {
+                setMessages((p) => [...p, { role: "assistant", content: `Error: ${event.message}` }]);
+            }
         } catch (e) {
-          console.error("Failed to parse stream event:", e);
+          console.error("Failed to parse stream event:", e, "Raw line:", line);
         }
       }
     }
@@ -150,9 +160,18 @@ export default function ChatPage() {
     <div className="flex h-screen bg-gray-900 text-white">
       {/* Sidebar for documents */}
       <aside className="w-64 border-r border-gray-800 p-4 flex flex-col gap-3 bg-gray-950">
-        <h2 className="font-semibold mb-2">Documents</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-semibold">Documents</h2>
+          <button
+            onClick={() => window.location.href = "/documents"}
+            className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+            title="Upload new documents"
+          >
+            + Upload
+          </button>
+        </div>
         {docs.length === 0 ? (
-          <p className="text-xs text-gray-400">No documents. Upload on /documents</p>
+          <p className="text-xs text-gray-400">No documents. Click "Upload" to add PDFs.</p>
         ) : (
           <div className="space-y-2 text-sm">
             {docs.map((doc) => (

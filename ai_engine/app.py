@@ -169,5 +169,6 @@ async def stream_answer(body: QueryRequest):
             error_data = {"type": "error", "message": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
         finally:
-            yield f"data: {json.dumps({"type": "end"})}\n\n"
+            end_data = {"type": "end"}
+            yield f"data: {json.dumps(end_data)}\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")

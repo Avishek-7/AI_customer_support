@@ -58,17 +58,29 @@ export default function DocumentsPage() {
         try {
             const res = await fetch(`${API_BASE}/documents/upload`, {
                 method: "POST",
-                headers: { Authorization: `Bearer ${token}` },
+                headers: { 
+                    "Authorization": `Bearer ${token}` 
+                },
                 body: formData,
             });
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.message || "Upload failed");
+                console.error("Upload error details:", err);
+                // Extract error message from Pydantic validation errors
+                let errorMsg = "Upload failed";
+                if (err.detail) {
+                    if (Array.isArray(err.detail)) {
+                        errorMsg = err.detail.map((e: any) => `${e.loc?.[1] || 'field'}: ${e.msg}`).join(", ");
+                    } else if (typeof err.detail === 'string') {
+                        errorMsg = err.detail;
+                    }
+                }
+                throw new Error(errorMsg);
             }
 
             const data = await res.json();
-            const docId = data.document_id || data.id;
+            const docId = data.id;
 
             setTitle("");
             setFile(null);

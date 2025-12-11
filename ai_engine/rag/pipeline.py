@@ -163,21 +163,34 @@ async def answer_query_stream(req):
     k = req.k or 5
     document_ids = req.document_ids
 
+    # Grab chat history for continuity
+    memory = get_memory(req.session_id)
+    history = memory.messages if memory else []
+    history_text = "\n".join(
+        f"User: {m.content}" if getattr(m, "type", "") == "human" else f"Assistant: {getattr(m, 'content', m)}"
+        for m in history
+    ) if history else ""
+
     # Embed query
     query_emb = embed_text(query)
 
-    # Retrieve docs
-    results = search_embeddings(query_emb, k=k)
-    context_chunks = []
+    # Retrieve docs with document filtering applied at search level
+    results = search_embeddings(query_emb, k=k, document_ids=document_ids)
+
+    context_chunks = [r.get("text", "") for r in results]
     sources = results
     
-    # Stream LLM
-    async for token in stream_llm_answer(query, context_chunks, req.system_prompt):
-        yield {"type": "token", "content": token}
+    # Stream LLM - pass history for better responses
+    if context_chunks:
+        async for token in stream_llm_answer(query, context_chunks, req.system_prompt, history_text):
+            yield {"type": "token", "content": token}
+    else:
+        # No context available, still stream a response
+        async for token in stream_llm_answer(query, [], req.system_prompt, history_text):
+            yield {"type": "token", "content": token}
 
-    # Final event
+    # Final event with sources
     yield {
-        "type": "final",
-        "sources": sources,
-        "answer": ""    # frontend will collect tokens into final answer
+        "type": "sources",
+        "sources": sources
     }

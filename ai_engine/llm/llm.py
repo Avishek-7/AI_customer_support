@@ -6,11 +6,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash-exp",
+    model="gemini-2.5-flash",
     google_api_key=settings.GOOGLE_API_KEY,
-    temperature=0.1,
-    max_output_tokens=1024,
-    streaming=True
+    temperature=0.3,
+    max_output_tokens=2048,
 )
 
 def generate_answer(
@@ -39,16 +38,21 @@ def generate_answer(
     except Exception as e:
         return f"[ERROR calling Gemini API] {e}"
     
-async def stream_llm_answer(question, context_chunks, system_prompt):
+async def stream_llm_answer(question, context_chunks, system_prompt, chat_history=""):
     context = "\n\n".join(context_chunks)
 
     prompt = rag_prompt.format(
         system_prompt=system_prompt,
         context=context,
-        question=question
+        question=question,
+        chat_history=chat_history or ""
     )
 
-    # yield tokens as soon as they are generated
-    async for chunk in llm.astream(prompt):
-        if chunk.content:
-            yield chunk.content
+    try:
+        async for chunk in llm.astream(prompt):
+            content = getattr(chunk, 'content', None)
+            if content is not None and content != "":
+                yield content
+    except Exception as e:
+        print(f"[ERROR] Streaming error: {e}")
+        yield f"\n\n[Error generating response: {str(e)}]"

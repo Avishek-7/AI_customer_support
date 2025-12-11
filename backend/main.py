@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from api import auth
 from api import chat
+from api import documents
 from core.database import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,4 +23,5 @@ app.add_middleware(
 # Routes
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(documents.router)
 
