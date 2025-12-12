@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from models.user import User
 from core.config import settings
+from utils.logger import get_logger
+
+logger = get_logger("backend.core.security")
 
 # Password hashing
 import bcrypt
@@ -66,11 +69,13 @@ def create_access_token(data: dict) -> str:
         minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
     )
     to_encode.update({"exp": expire})
-    return jwt.encode(
+    token = jwt.encode(
         to_encode,
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM
     )
+    logger.debug(f"Access token created", extra={"user_sub": data.get("sub")})
+    return token
     
 def decode_access_token(token: str) -> Optional[str]:
     """
@@ -84,8 +89,10 @@ def decode_access_token(token: str) -> Optional[str]:
             algorithms=[settings.JWT_ALGORITHM],
         )
         user_id: str = payload.get("sub")
+        logger.debug(f"Token decoded", extra={"user_id": user_id})
         return user_id
-    except JWTError:
+    except JWTError as e:
+        logger.warning(f"Token decode failed", extra={"error": str(e)})
         return None
     
 # ------ Get Current User -----
@@ -105,12 +112,15 @@ def get_current_user(token: str = Depends(oauth_scheme), db: Session = Depends(g
 
     user_id = decode_access_token(token)
     if user_id is None:
+        logger.warning(f"Authentication failed - invalid token")
         raise credential_exception
     
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
+        logger.warning(f"Authentication failed - user not found", extra={"user_id": user_id})
         raise credential_exception
     
+    logger.debug(f"User authenticated", extra={"user_id": user.id})
     return user
 
 

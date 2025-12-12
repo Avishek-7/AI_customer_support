@@ -3,9 +3,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
+import uuid
 
 from rag.pipeline import index_document, answer_query, update_document, answer_query_stream
 from vectorstore.vector_store import delete_document
+from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
+
+# Initialize logging on startup
+init_logging()
+logger = get_logger("ai_engine.app")
 
 app = FastAPI(
     title="AI Engine - RAG Microservice",
@@ -80,6 +86,14 @@ async def index_document_endpoint(body: IndexDocumentRequest, background_task: B
     - embed chunks
     - store embeddings + metadata in FAISS 
     """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info(f"Indexing document", extra={
+        "document_id": body.document_id,
+        "title": body.title,
+        "content_length": len(body.content)
+    })
 
     background_task.add_task(
         index_document,
@@ -109,6 +123,15 @@ def query_endpoint(body: QueryRequest):
     - build prompt with document
     - generate answer using LLM
     """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info("Processing query", extra={
+        "query": body.query[:100],
+        "session_id": body.session_id,
+        "document_ids": body.document_ids,
+        "k": body.k
+    })
 
     result = answer_query(
         query=body.query,
@@ -117,6 +140,16 @@ def query_endpoint(body: QueryRequest):
         document_ids=body.document_ids,
         k=body.k,
     )
+    
+    # Log the full answer for debugging/comparison
+    logger.info("=== AI ENGINE ANSWER ===", extra={
+        "request_id": req_id,
+        "query": body.query,
+        "answer": result["answer"],
+        "answer_length": len(result["answer"]),
+        "sources_count": len(result["sources"])
+    })
+    logger.info(f"[AI_ENGINE_ANSWER] {result['answer'][:500]}..." if len(result["answer"]) > 500 else f"[AI_ENGINE_ANSWER] {result['answer']}")
 
     return QueryResponse(
         answer=result["answer"],
@@ -151,8 +184,11 @@ def delete_document_endpoint(document_id: int):
     - removes all chunks for this document_id
     - rebuilds FAISS index
     """
+    logger.info(f"Deleting document", extra={"document_id": document_id})
     
     delete_document(document_id)
+    
+    logger.info(f"Document deleted", extra={"document_id": document_id})
     
     return DeleteDocumentResponse(
         document_id=document_id,
@@ -161,14 +197,30 @@ def delete_document_endpoint(document_id: int):
 
 @app.post("/stream")
 async def stream_answer(body: QueryRequest):
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info("Starting stream query", extra={
+        "query": body.query[:100],
+        "session_id": body.session_id,
+        "document_ids": body.document_ids
+    })
+    
     async def event_generator():
+        token_count = 0
         try:
             async for event in answer_query_stream(body):
+                if event.get("type") == "token":
+                    token_count += 1
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
             error_data = {"type": "error", "message": str(e)}
             yield f"data: {json.dumps(error_data)}\n\n"
         finally:
+            logger.info(f"Stream completed", extra={"tokens_sent": token_count})
             end_data = {"type": "end"}
             yield f"data: {json.dumps(end_data)}\n\n"
+            clear_request_id()
+            
     return StreamingResponse(event_generator(), media_type="text/event-stream")

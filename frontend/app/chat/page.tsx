@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ChatBubble from "./../../components/ChatBubble";
 import ChatInput from "./../../components/ChatInput";
 import UploadModal from "./../../components/UploadModal";
+import { chatLogger } from "@/lib/logger";
 
 type Source = { title?: string; document_id?: number; chunk_id?: number };
 
@@ -35,10 +36,12 @@ export default function ChatPage() {
   const fetchDocs = useCallback(async () => {
     const token = getToken();
     if (!token) return;
+    chatLogger.debug("Fetching documents for sidebar");
     const res = await fetch(`${API_BASE}/documents/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
+    chatLogger.info("Documents loaded", { count: data.documents?.length || 0 });
     setDocs(data.documents ?? []);
   }, []);
 
@@ -49,6 +52,7 @@ export default function ChatPage() {
     
     if (!confirm(`Delete ${selectedDocIds.length} document(s)? This cannot be undone.`)) return;
 
+    chatLogger.info("Deleting documents", { documentIds: selectedDocIds });
     try {
       // Delete each selected document
       await Promise.all(
@@ -59,10 +63,12 @@ export default function ChatPage() {
           })
         )
       );
+      chatLogger.info("Documents deleted successfully", { count: selectedDocIds.length });
       // Clear selection and refresh list
       setSelectedDocIds([]);
       await fetchDocs();
     } catch (err) {
+      chatLogger.error("Failed to delete documents", { error: String(err) });
       console.error("Failed to delete documents:", err);
     }
   };
@@ -109,6 +115,11 @@ export default function ChatPage() {
     const token = getToken();
     if (!userMessage.trim() || !token) return;
 
+    chatLogger.info("Sending chat message", { 
+      messageLength: userMessage.length,
+      selectedDocIds: selectedDocIds.length > 0 ? selectedDocIds : "all"
+    });
+
     // Show user message instantly
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
 
@@ -126,15 +137,20 @@ export default function ChatPage() {
 
     if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Server error" }));
+        chatLogger.error("Chat request failed", { status: response.status, error: err.detail });
         setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.detail || "unknown error"}` }]);
         setIsStreaming(false);
         return;
     }
 
+    chatLogger.debug("Stream connection established");
+    
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
-    // let aiResponse = "";
+    // Track full answer for logging
+    let fullAnswer = "";
     let buffer = "";
+    let tokenCount = 0;
 
     let finalSources: { title: string; chunk_id: number }[] = [];
 
@@ -158,12 +174,16 @@ export default function ChatPage() {
             const event = JSON.parse(jsonStr);
             
             if (event.type === "token") {
+                tokenCount++;
+                // Track token for answer logging
+                fullAnswer += event.content;
                 // AI engine sends content, not token
                 upsertAssistantChunk(event.content);
             }       
             else if (event.type === "sources") {
                 // attach sources to the last assistant message
                 finalSources = event.sources ?? [];
+                chatLogger.debug("Sources received", { count: finalSources.length });
                 setMessages((prev) => {
                     const copy = [...prev];
                     const last = copy[copy.length - 1];
@@ -175,16 +195,26 @@ export default function ChatPage() {
             }
             else if (event.type === "end") {
                 // Stream has ended
-                console.log("Stream ended");
+                chatLogger.debug("Stream ended event received");
             }
             else if (event.type === "error") {
+                chatLogger.error("Stream error event", { message: event.message });
                 setMessages((p) => [...p, { role: "assistant", content: `Error: ${event.message}` }]);
             }
         } catch (e) {
+          chatLogger.error("Failed to parse stream event", { error: String(e), line });
           console.error("Failed to parse stream event:", e, "Raw line:", line);
         }
       }
     }
+    
+    // Log the complete answer received from backend for comparison
+    chatLogger.logAnswer("FRONTEND_RECEIVED_ANSWER", fullAnswer, {
+      query: userMessage,
+      tokenCount,
+      sourcesCount: finalSources.length,
+      documentIds: selectedDocIds.length > 0 ? selectedDocIds : "all"
+    });
   
     setIsStreaming(false);
   }

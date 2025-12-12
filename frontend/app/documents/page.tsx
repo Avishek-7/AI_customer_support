@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { docsLogger } from "@/lib/logger";
 
 type Document = {
     id: number;
@@ -31,13 +32,16 @@ export default function DocumentsPage() {
         const token = getToken();
         if (!token) return;
         setLoading(true);
+        docsLogger.info("Fetching documents");
         try {
             const res = await fetch(`${API_BASE}/documents/`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
+            docsLogger.info("Documents fetched", { count: data.documents?.length || 0 });
             setDocs(data.documents ?? []);
         } catch (err) {
+            docsLogger.error("Failed to fetch documents", { error: String(err) });
             console.error(err);
             setError("Failed to fetch documents.");
         } finally {
@@ -61,6 +65,7 @@ export default function DocumentsPage() {
 
         setUploading(true);
         setError(null);
+        docsLogger.info("Starting document upload", { title, fileName: file.name, fileSize: file.size });
 
         const formData = new FormData();
         formData.append("title", title);
@@ -77,6 +82,7 @@ export default function DocumentsPage() {
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
+                docsLogger.error("Upload failed", { status: res.status, error: err });
                 console.error("Upload error details:", err);
                 // Extract error message from Pydantic validation errors
                 let errorMsg = "Upload failed";
@@ -92,6 +98,7 @@ export default function DocumentsPage() {
 
             const data = await res.json();
             const docId = data.id;
+            docsLogger.info("Document uploaded successfully", { docId, title });
 
             setTitle("");
             setFile(null);
@@ -113,6 +120,8 @@ export default function DocumentsPage() {
     const pollIndexStatus = async (docId: number) => {
         const token = getToken();
         if (!token) return;
+        
+        docsLogger.info("Starting index status polling", { docId });
 
         const interval = setInterval(async () => {
             try {
@@ -120,11 +129,14 @@ export default function DocumentsPage() {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 const status = await res.json();
+                
+                docsLogger.debug("Index status update", { docId, status: status.status, chunkCount: status.chunk_count });
 
                 setIndexStatus(status.status);
                 setChunkCount(status.chunk_count);
 
                 if (status.status === "completed") {
+                    docsLogger.info("Document indexing completed", { docId, chunkCount: status.chunk_count });
                     clearInterval(interval);
                     setIndexStatus(null);
                     setChunkCount(null);
@@ -132,12 +144,14 @@ export default function DocumentsPage() {
                 }
 
                 if (status.status === "failed") {
+                    docsLogger.error("Document indexing failed", { docId });
                     clearInterval(interval);
                     setError("Document indexing failed");
                     setIndexStatus(null);
                     setChunkCount(null);
                 }
             } catch (err) {
+                docsLogger.error("Polling error", { docId, error: String(err) });
                 console.error("Polling error:", err);
             }
         }, 2000); // Poll every 2 seconds

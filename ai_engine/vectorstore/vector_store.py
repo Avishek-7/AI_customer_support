@@ -4,6 +4,9 @@ from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import faiss
 from embeddings.embedder import EMBEDDING_DIM
+from utils.logger import get_logger
+
+logger = get_logger("ai_engine.vectorstore")
 
 DATA_DIR = "data"
 INDEX_PATH = os.path.join(DATA_DIR, "faiss_index.bin")
@@ -61,6 +64,11 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
     embeddings: shape (N, EMBEDDING_DIM)
     metadatas: list of dicts of length N
     """
+    logger.info(f"Adding embeddings to FAISS", extra={
+        "count": len(metadatas),
+        "embedding_shape": embeddings.shape
+    })
+    
     index, metadata = load_index_and_metadata()
 
     if embeddings.shape[1] != EMBEDDING_DIM:
@@ -71,6 +79,8 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
     index.add(embeddings)
     metadata.extend(metadatas)
     save_index_and_metadata(index, metadata)
+    
+    logger.info(f"FAISS index updated", extra={"total_vectors": index.ntotal})
 
 # Delete all chunks of a single document
 def delete_document(document_id: int) -> None:
@@ -78,6 +88,8 @@ def delete_document(document_id: int) -> None:
     Delete all FAISS vectors belonging to a document.
     Rebuilds FAISS index by re-embedding remaining documents.
     """
+    logger.info(f"Deleting document from FAISS", extra={"document_id": document_id})
+    
     from embeddings.embedder import embed_texts
     
     index, metadata = load_index_and_metadata()
@@ -87,7 +99,15 @@ def delete_document(document_id: int) -> None:
 
     # If nothing changed, do nothing
     if len(new_metadata) == len(metadata):
+        logger.info(f"No chunks found for document, nothing to delete", extra={"document_id": document_id})
         return
+    
+    chunks_removed = len(metadata) - len(new_metadata)
+    logger.info(f"Removed chunks, rebuilding index", extra={
+        "document_id": document_id,
+        "chunks_removed": chunks_removed,
+        "remaining_chunks": len(new_metadata)
+    })
     
     # Rebuild FAISS from scratch by re-embedding
     rebuild_index(new_metadata)
@@ -98,6 +118,8 @@ def rebuild_index(metadata: List[Dict[str, Any]]) -> None:
     Rebuild FAISS index from metadata by re-embedding text content.
     This is necessary because embeddings are stored in FAISS, not metadata.
     """
+    logger.info(f"Rebuilding FAISS index", extra={"metadata_count": len(metadata)})
+    
     from embeddings.embedder import embed_texts
     
     new_index = _empty_index()
@@ -109,6 +131,7 @@ def rebuild_index(metadata: List[Dict[str, Any]]) -> None:
         new_index.add(embeddings)
 
     save_index_and_metadata(new_index, metadata)
+    logger.info(f"FAISS index rebuilt successfully", extra={"total_vectors": new_index.ntotal})
 
 
 # Search
@@ -121,9 +144,15 @@ def search_embeddings(
     Search FAISS index. Returns list of metadata dicts with added score.
     Optionally filter by document_ids.
     """
+    logger.info(f"Searching FAISS index", extra={
+        "k": k,
+        "document_ids_filter": document_ids
+    })
+    
     index, metadata = load_index_and_metadata()
     
     if index.ntotal == 0:
+        logger.warning("FAISS index is empty, returning no results")
         return []
     
     query_embedding = query_embedding.reshape(1, -1).astype("float32")
@@ -152,4 +181,9 @@ def search_embeddings(
         if len(results) >= k:
             break
 
+    logger.info(f"FAISS search completed", extra={
+        "results_count": len(results),
+        "index_total": index.ntotal
+    })
+    
     return results

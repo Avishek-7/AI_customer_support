@@ -1,9 +1,11 @@
 from typing import List, Optional
 from llm.prompt_template import rag_prompt
 from utils.config import settings
+from utils.logger import get_logger
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+logger = get_logger("ai_engine.llm")
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -21,6 +23,11 @@ def generate_answer(
     """
     Generate answer using LangChain + Gemini with proper prompt formatting
     """
+    logger.info("Generating answer", extra={
+        "question": question[:100],
+        "context_chunks_count": len(context_chunks),
+        "has_history": bool(chat_history)
+    })
 
     context = "\n\n".join(context_chunks)
 
@@ -34,11 +41,18 @@ def generate_answer(
 
     try:
         result = llm.invoke(formatted_prompt)
+        logger.info("Answer generated", extra={"answer_length": len(result.content)})
         return result.content
     except Exception as e:
+        logger.error(f"Gemini API error: {e}", exc_info=True)
         return f"[ERROR calling Gemini API] {e}"
     
 async def stream_llm_answer(question, context_chunks, system_prompt, chat_history=""):
+    logger.info("Starting LLM stream", extra={
+        "question": question[:100],
+        "context_chunks_count": len(context_chunks)
+    })
+    
     context = "\n\n".join(context_chunks)
 
     prompt = rag_prompt.format(
@@ -48,11 +62,15 @@ async def stream_llm_answer(question, context_chunks, system_prompt, chat_histor
         chat_history=chat_history or ""
     )
 
+    token_count = 0
     try:
         async for chunk in llm.astream(prompt):
             content = getattr(chunk, 'content', None)
             if content is not None and content != "":
+                token_count += 1
                 yield content
     except Exception as e:
-        print(f"[ERROR] Streaming error: {e}")
+        logger.error(f"Streaming error: {e}", exc_info=True)
         yield f"\n\n[Error generating response: {str(e)}]"
+    finally:
+        logger.info("LLM stream completed", extra={"tokens_yielded": token_count})

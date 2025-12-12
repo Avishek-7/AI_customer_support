@@ -16,6 +16,9 @@ from schemas.document_schemas import (
     DocumentStatusUpdateRequest,
 )
 from utils.pdf_loader import extract_text_from_pdf
+from utils.logger import get_logger
+
+logger = get_logger("backend.api.documents")
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -29,13 +32,21 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    logger.info(f"Document upload started", extra={
+        "user_id": current_user.id,
+        "title": title,
+        "filename": file.filename
+    })
+    
     # Validate file type
     if not file.filename.lower().endswith(".pdf"):
+        logger.warning(f"Invalid file type", extra={"filename": file.filename})
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
     # Extract text from PDF
     pdf_bytes = await file.read()
     content = extract_text_from_pdf(pdf_bytes)
+    logger.info(f"PDF text extracted", extra={"content_length": len(content)})
 
     # Store document in DB
     document_db = Document(
@@ -47,6 +58,7 @@ async def upload_document(
     db.add(document_db)
     db.commit()
     db.refresh(document_db)
+    logger.info(f"Document saved to database", extra={"document_id": document_db.id})
 
     # Call AI Engine to index this document
     async with httpx.AsyncClient() as client:
@@ -61,9 +73,9 @@ async def upload_document(
                 timeout=30.0,
             )
             resp.raise_for_status()
+            logger.info(f"Document indexed by AI engine", extra={"document_id": document_db.id})
         except Exception as e:
-            # You might choose to log this but not fail the whole request
-            print(f"[AI ENGINE ERROR - index-document] {e}")
+            logger.error(f"AI engine indexing error", extra={"document_id": document_db.id, "error": str(e)})
 
     return document_db
 
@@ -73,7 +85,9 @@ def get_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Fetching user documents", extra={"user_id": current_user.id})
     docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
+    logger.info(f"Documents retrieved", extra={"user_id": current_user.id, "count": len(docs)})
     return DocumentListResponse(documents=docs)
 
 # ------ Get single Document -----
@@ -83,6 +97,7 @@ def get_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Fetching document", extra={"user_id": current_user.id, "doc_id": doc_id})
     doc = (
         db.query(Document)
         .filter(Document.id == doc_id, Document.owner_id == current_user.id)
@@ -90,8 +105,10 @@ def get_document(
     )
 
     if not doc:
+        logger.warning(f"Document not found", extra={"user_id": current_user.id, "doc_id": doc_id})
         raise HTTPException(status_code=404, detail="Document not found")
     
+    logger.info(f"Document retrieved", extra={"doc_id": doc_id})
     return doc
 
 # ------ Update Document -----
@@ -102,6 +119,8 @@ async def update_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Updating document", extra={"user_id": current_user.id, "doc_id": doc_id})
+    
     doc = (
         db.query(Document)
         .filter(Document.id == doc_id, Document.owner_id == current_user.id)
@@ -109,6 +128,7 @@ async def update_document(
     )
 
     if not doc: 
+        logger.warning(f"Document not found for update", extra={"doc_id": doc_id})
         raise HTTPException(status_code=404, detail="Document not found")
     
     if update_data.title:
@@ -119,6 +139,7 @@ async def update_document(
 
     db.commit()
     db.refresh(doc)
+    logger.info(f"Document updated in database", extra={"doc_id": doc_id})
 
     # Tell AI Engine to re-index this updated document
     async with httpx.AsyncClient() as client:
@@ -133,8 +154,9 @@ async def update_document(
                 timeout=30.0,
             )
             resp.raise_for_status()
+            logger.info(f"Document re-indexed by AI engine", extra={"doc_id": doc_id})
         except Exception as e:
-            print(f"[AI ENGINE ERROR - update-document] {e}")
+            logger.error(f"AI engine update error", extra={"doc_id": doc_id, "error": str(e)})
     
     return doc
 
@@ -145,6 +167,8 @@ async def delete_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Deleting document", extra={"user_id": current_user.id, "doc_id": doc_id})
+    
     doc = (
         db.query(Document)
         .filter(Document.id == doc_id, Document.owner_id == current_user.id)
@@ -152,6 +176,7 @@ async def delete_document(
     )
 
     if not doc:
+        logger.warning(f"Document not found for deletion", extra={"doc_id": doc_id})
         raise HTTPException(status_code=404, detail="Document not found")
     
     # Delete from AI Engine FAISS index
@@ -161,12 +186,14 @@ async def delete_document(
                 f"{AI_ENGINE_URL}/delete-document/{doc.id}"
             )
             resp.raise_for_status()
+            logger.info(f"Document deleted from AI engine", extra={"doc_id": doc_id})
         except Exception as e:
-            print(f"[AI ENGINE ERROR - delete-document] {e}")
+            logger.error(f"AI engine delete error", extra={"doc_id": doc_id, "error": str(e)})
     
     # Delete from database
     db.delete(doc)
     db.commit()
+    logger.info(f"Document deleted from database", extra={"doc_id": doc_id})
 
     return DocumentDeleteResponse(detail="Document deleted successfully")
 
@@ -177,6 +204,7 @@ def search_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Searching documents", extra={"user_id": current_user.id, "query": search_req.query})
     query = f"%{search_req.query.lower()}%"
 
     docs = (
@@ -188,6 +216,7 @@ def search_documents(
         .all()
     )
 
+    logger.info(f"Search completed", extra={"user_id": current_user.id, "results_count": len(docs)})
     return DocumentSearchResponse(documents=docs)
 
 
@@ -197,8 +226,15 @@ def update_document_status(
     body: DocumentStatusUpdateRequest,
     db: Session = Depends(get_db)
 ):
+    logger.info(f"Updating document status", extra={
+        "document_id": body.document_id,
+        "status": body.status,
+        "chunk_count": body.chunk_count
+    })
+    
     doc = db.query(Document).filter(Document.id == body.document_id).first()
     if not doc:
+        logger.warning(f"Document not found for status update", extra={"document_id": body.document_id})
         raise HTTPException(status_code=404, detail="Document not found")
     
     doc.index_status = body.status
@@ -207,6 +243,7 @@ def update_document_status(
         doc.chunk_count = body.chunk_count
 
     db.commit()
+    logger.info(f"Document status updated", extra={"document_id": body.document_id, "status": body.status})
     return {"detail": "Status updated"}
 
 
@@ -216,12 +253,14 @@ def get_document_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    logger.debug(f"Getting document status", extra={"doc_id": doc_id})
     doc = (
         db.query(Document)
         .filter(Document.id == doc_id, Document.owner_id == current_user.id)
         .first()
     )
     if not doc:
+        logger.warning(f"Document not found for status check", extra={"doc_id": doc_id})
         raise HTTPException(status_code=404, detail="Document not found")
     
     return {

@@ -5,6 +5,9 @@ from langchain_core.documents import Document
 
 from embeddings.embedder import embed_text
 from vectorstore.vector_store import search_embeddings
+from utils.logger import get_logger
+
+logger = get_logger("ai_engine.retriever")
 
 class FAISSRetriever(BaseRetriever):
     """
@@ -45,6 +48,12 @@ class FAISSRetriever(BaseRetriever):
     
     # ---- Synchronous retrieval ----
     def _get_relevant_documents(self, query: str) -> List[Document]:
+        logger.info(f"Retrieving documents", extra={
+            "query_length": len(query),
+            "k": self.k,
+            "allowed_document_ids": list(self.allowed_document_ids) if self.allowed_document_ids else None
+        })
+        
         # 1) embed query
         q_embedding = embed_text(query)
 
@@ -58,7 +67,10 @@ class FAISSRetriever(BaseRetriever):
         hits = hits[: self.k]
 
         # 5) convert to LangChain Documents
-        return self._hits_to_documents(hits)
+        docs = self._hits_to_documents(hits)
+        
+        logger.info(f"Retrieved documents", extra={"count": len(docs)})
+        return docs
     
     # ---- Asynchronous retrieval ----
     async def _aget_relevant_documents(self, query: str) -> List[Document]:

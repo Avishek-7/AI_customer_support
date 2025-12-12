@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authLogger } from "@/lib/logger";
 
 export default function RegisterPage() {
     const [username, setUsername] = useState("");
@@ -10,9 +11,12 @@ export default function RegisterPage() {
 
     const register = async () => {
         if (password !== confirmPassword) {
+            authLogger.warn("Registration failed - password mismatch", { email });
             alert("Passwords do not match");
             return;
         }
+
+        authLogger.info("Registration attempt", { email, username });
 
         const response = await fetch("http://localhost:8000/auth/register", {
             method: "POST",
@@ -21,11 +25,15 @@ export default function RegisterPage() {
         });
 
         const data = await response.json();
+        authLogger.debug("Registration response received", { status: response.status, hasToken: !!data.token });
+        
         if (data.token) {
+            authLogger.info("Registration successful", { email });
             localStorage.setItem("token", data.token);
             alert("Registration successful!");
             window.location.href = "/chat";
         } else if (data.detail) {
+            authLogger.warn("Registration failed", { email, error: data.detail });
             alert(data.detail);
         }
     };

@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { authLogger } from "@/lib/logger";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
     const login = async () => {
+        authLogger.info("Login attempt", { email });
+        
         const response = await fetch("http://localhost:8000/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -14,12 +17,17 @@ export default function LoginPage() {
         });
 
         const data = await response.json();
+        authLogger.debug("Login response received", { status: response.status, hasToken: !!data.token });
+        
         if (data.token) {
+            authLogger.info("Login successful", { email });
             localStorage.setItem("token", data.token);
             window.location.href = "/chat";
         } else if (data.detail) {
+            authLogger.warn("Login failed", { email, error: data.detail });
             alert(data.detail);
         } else {
+            authLogger.error("Login failed - unknown error", { email });
             alert("Login failed");
         }
     };
