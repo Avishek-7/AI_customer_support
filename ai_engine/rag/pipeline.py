@@ -11,16 +11,20 @@ import httpx
 BACKEND_URL = settings.BACKEND_URL
 
 async def update_status(document_id: int, status: str, chunk_count: int = None):
-    """ Notify backend about indexing progress. """
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            f"{BACKEND_URL}/api/documents/update-status",
-            json={
-                "document_id": document_id,
-                "status": status,
-                "chunk_count": chunk_count,
-            }
-        )
+    """ Notify backend about indexing progress. Non-blocking - failures are logged but don't stop indexing. """
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{BACKEND_URL}/documents/update-status",
+                json={
+                    "document_id": document_id,
+                    "status": status,
+                    "chunk_count": chunk_count,
+                },
+                timeout=5.0
+            )
+    except Exception as e:
+        print(f"Warning: Could not update status for document {document_id}: {e}")
 
 # Index Document into FAISS
 async def index_document(

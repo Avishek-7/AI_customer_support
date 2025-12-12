@@ -1,7 +1,7 @@
 // components/ResizableSidebar.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 export default function ResizableSidebar({ children }: { children: React.ReactNode }) {
   const [width, setWidth] = useState<number>(260);
@@ -24,10 +24,15 @@ export default function ResizableSidebar({ children }: { children: React.ReactNo
   }
 
   // attach global listeners
-  if (typeof window !== "undefined") {
-    window.onmouseup = onMouseUp;
-    window.onmousemove = onMouseMove;
-  }
+  useEffect(() => {
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mousemove", onMouseMove);
+
+    return () => {
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mousemove", onMouseMove);
+    };
+  }, []);
 
   return (
     <aside style={{ width }} className="bg-gray-900 border-r border-gray-800 p-4 flex flex-col">

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ChatBubble from "./../../components/ChatBubble";
 import ChatInput from "./../../components/ChatInput";
+import UploadModal from "./../../components/UploadModal";
 
 type Source = { title?: string; document_id?: number; chunk_id?: number };
 
@@ -19,29 +20,71 @@ export default function ChatPage() {
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const chatRef = useRef<HTMLDivElement>(null);
   const API_BASE = "http://localhost:8000";
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  // Auto scroll
-  // Check authentication once on mount
+  // Get token - only available on client side
+  const getToken = () => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("token");
+  };
+
+  // Fetch documents
+  const fetchDocs = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+    const res = await fetch(`${API_BASE}/documents/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setDocs(data.documents ?? []);
+  }, []);
+
+  // Delete selected documents
+  const handleDeleteSelected = async () => {
+    const token = getToken();
+    if (!token || selectedDocIds.length === 0) return;
+    
+    if (!confirm(`Delete ${selectedDocIds.length} document(s)? This cannot be undone.`)) return;
+
+    try {
+      // Delete each selected document
+      await Promise.all(
+        selectedDocIds.map((id) =>
+          fetch(`${API_BASE}/documents/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+      // Clear selection and refresh list
+      setSelectedDocIds([]);
+      await fetchDocs();
+    } catch (err) {
+      console.error("Failed to delete documents:", err);
+    }
+  };
+
+  // Check authentication and fetch documents on mount
   useEffect(() => {
+    const token = getToken();
     if (!token) {
       window.location.href = "/login";
       return;
     }
-
-    const fetchDocs = async () => {
-      const res = await fetch(`${API_BASE}/documents`, {
+    
+    // Inline fetch to avoid linter warning about calling setState in effect
+    const loadDocs = async () => {
+      const res = await fetch(`${API_BASE}/documents/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       setDocs(data.documents ?? []);
     };
-    fetchDocs();
-  }, [token]);
+    loadDocs();
+  }, []);
 
   // Auto scroll when messages change
   useEffect(() => {
@@ -63,6 +106,7 @@ export default function ChatPage() {
   }
 
   async function handleSend(userMessage: string) {
+    const token = getToken();
     if (!userMessage.trim() || !token) return;
 
     // Show user message instantly
@@ -163,15 +207,24 @@ export default function ChatPage() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold">Documents</h2>
           <button
-            onClick={() => window.location.href = "/documents"}
+            onClick={() => setShowUploadModal(true)}
             className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
             title="Upload new documents"
           >
             + Upload
           </button>
+          {selectedDocIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
+              title="Delete selected documents"
+            >
+              🗑 Delete ({selectedDocIds.length})
+            </button>
+          )}
         </div>
         {docs.length === 0 ? (
-          <p className="text-xs text-gray-400">No documents. Click "Upload" to add PDFs.</p>
+          <p className="text-xs text-gray-400">No documents. Click &quot;Upload&quot; to add PDFs.</p>
         ) : (
           <div className="space-y-2 text-sm">
             {docs.map((doc) => (
@@ -252,6 +305,23 @@ export default function ChatPage() {
           <ChatInput onSend={handleSend} />
         </div>
       </div>
+
+      {/* Upload Modal */}
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploadComplete={() => {
+          // Refresh the documents list after upload
+          const token = getToken();
+          if (token) {
+            fetch(`${API_BASE}/documents/`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+              .then((res) => res.json())
+              .then((data) => setDocs(data.documents ?? []));
+          }
+        }}
+      />
     </div>
   );
 }

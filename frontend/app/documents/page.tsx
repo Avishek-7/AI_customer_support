@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Document = {
     id: number;
@@ -21,14 +21,18 @@ export default function DocumentsPage() {
 
     const API_BASE = "http://localhost:8000";
 
-    const token = 
-        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    // Get token - only available on client side
+    const getToken = () => {
+        if (typeof window === "undefined") return null;
+        return localStorage.getItem("token");
+    };
 
     const fetchDocs = async () => {
+        const token = getToken();
         if (!token) return;
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/documents`, {
+            const res = await fetch(`${API_BASE}/documents/`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await res.json();
@@ -42,10 +46,17 @@ export default function DocumentsPage() {
     };
 
     useEffect(() => {
+        const token = getToken();
+        if (!token) {
+            window.location.href = "/login";
+            return;
+        }
         fetchDocs();
-    }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleUpload = async () => {
+        const token = getToken();
         if (!file || !title.trim() || !token) return;
 
         setUploading(true);
@@ -71,7 +82,7 @@ export default function DocumentsPage() {
                 let errorMsg = "Upload failed";
                 if (err.detail) {
                     if (Array.isArray(err.detail)) {
-                        errorMsg = err.detail.map((e: any) => `${e.loc?.[1] || 'field'}: ${e.msg}`).join(", ");
+                        errorMsg = err.detail.map((e: { loc?: string[]; msg: string }) => `${e.loc?.[1] || 'field'}: ${e.msg}`).join(", ");
                     } else if (typeof err.detail === 'string') {
                         errorMsg = err.detail;
                     }
@@ -90,15 +101,17 @@ export default function DocumentsPage() {
             if (docId) {
                 pollIndexStatus(docId);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.message || "Upload failed.");
+            const errorMessage = err instanceof Error ? err.message : "Upload failed.";
+            setError(errorMessage);
         } finally {
             setUploading(false);
         }
     };
 
     const pollIndexStatus = async (docId: number) => {
+        const token = getToken();
         if (!token) return;
 
         const interval = setInterval(async () => {
