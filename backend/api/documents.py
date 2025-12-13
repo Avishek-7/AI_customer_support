@@ -35,12 +35,12 @@ async def upload_document(
     logger.info(f"Document upload started", extra={
         "user_id": current_user.id,
         "title": title,
-        "filename": file.filename
+        "file_name": file.filename
     })
     
     # Validate file type
     if not file.filename.lower().endswith(".pdf"):
-        logger.warning(f"Invalid file type", extra={"filename": file.filename})
+        logger.warning(f"Invalid file type", extra={"file_name": file.filename})
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
     # Extract text from PDF
@@ -87,7 +87,12 @@ def get_documents(
 ):
     logger.info(f"Fetching user documents", extra={"user_id": current_user.id})
     docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
-    logger.info(f"Documents retrieved", extra={"user_id": current_user.id, "count": len(docs)})
+    logger.info(f"Documents retrieved", extra={
+        "user_id": current_user.id, 
+        "count": len(docs),
+        "document_ids": [doc.id for doc in docs],
+        "document_titles": [doc.title for doc in docs]
+    })
     return DocumentListResponse(documents=docs)
 
 # ------ Get single Document -----
@@ -268,3 +273,61 @@ def get_document_status(
         "status": doc.index_status or "pending",
         "chunk_count": doc.chunk_count or 0
     }
+
+
+# ------ Re-index Document (force re-chunk and re-embed) -----
+@router.post("/{doc_id}/reindex", response_model=DocumentResponse)
+async def reindex_document(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Force re-index a document in the AI engine.
+    Useful when chunking/embedding needs to be regenerated.
+    """
+    logger.info(f"Re-indexing document", extra={"user_id": current_user.id, "doc_id": doc_id})
+    
+    doc = (
+        db.query(Document)
+        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
+        .first()
+    )
+    
+    if not doc:
+        logger.warning(f"Document not found for re-index", extra={"doc_id": doc_id})
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Update status to processing
+    doc.index_status = "processing"
+    db.commit()
+    
+    # Call AI Engine to re-index (update = delete old + re-index)
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.put(
+                f"{AI_ENGINE_URL}/update-document",
+                json={
+                    "document_id": doc.id,
+                    "title": doc.title,
+                    "content": doc.content,
+                },
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            doc.chunk_count = result.get("chunks_indexed", 0)
+            doc.index_status = "completed"
+            db.commit()
+            logger.info(f"Document re-indexed successfully", extra={
+                "doc_id": doc_id,
+                "chunks": doc.chunk_count
+            })
+        except Exception as e:
+            doc.index_status = "failed"
+            db.commit()
+            logger.error(f"AI engine re-index error", extra={"doc_id": doc_id, "error": str(e)})
+            raise HTTPException(status_code=500, detail=f"Re-indexing failed: {str(e)}")
+    
+    db.refresh(doc)
+    return doc

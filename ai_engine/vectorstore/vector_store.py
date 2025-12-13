@@ -143,6 +143,8 @@ def search_embeddings(
     """
     Search FAISS index. Returns list of metadata dicts with added score.
     Optionally filter by document_ids.
+    
+    For queries about sections/metrics, also includes related section keywords.
     """
     logger.info(f"Searching FAISS index", extra={
         "k": k,
@@ -158,12 +160,14 @@ def search_embeddings(
     query_embedding = query_embedding.reshape(1, -1).astype("float32")
 
     # If filtering, retrieve more candidates to ensure we get enough after filtering
-    search_k = k * 4 if document_ids else k
+    search_k = k * 5 if document_ids else k * 2  # Retrieve more candidates
     search_k = min(search_k, index.ntotal)  # Don't exceed total docs
     
     distances, indices = index.search(query_embedding, search_k)
 
     results = []
+    results_dict = {}  # Track by chunk to deduplicate
+    
     for dist, idx in zip(distances[0], indices[0]):
         if idx < 0 or idx >= len(metadata):
             continue
@@ -173,17 +177,33 @@ def search_embeddings(
         # Filter by document_ids if specified
         if document_ids and item.get("document_id") not in document_ids:
             continue
-            
-        item["score"] = float(dist)
-        results.append(item)
+        
+        # Boost score if chunk contains section headers relevant to queries about "evaluation metrics"
+        chunk_text = item.get("text", "").lower()
+        boost = 0
+        if any(keyword in chunk_text for keyword in ["evaluation metrics:", "code:", "database:", "logging:", "deployment:", "optimization:"]):
+            boost = -0.1  # Lower distance = better, so negative boost improves score
+        
+        item["score"] = float(dist) + boost
+        
+        # Use chunk_id as key to avoid duplicates
+        chunk_key = (item.get("document_id"), item.get("chunk_id"))
+        if chunk_key not in results_dict:
+            results_dict[chunk_key] = item
+            results.append(item)
         
         # Stop once we have enough results
         if len(results) >= k:
             break
 
+    # Sort by score (lower is better for L2 distance)
+    results.sort(key=lambda x: x["score"])
+    results = results[:k]
+
     logger.info(f"FAISS search completed", extra={
         "results_count": len(results),
-        "index_total": index.ntotal
+        "index_total": index.ntotal,
+        "scores": [round(r["score"], 3) for r in results]
     })
     
     return results

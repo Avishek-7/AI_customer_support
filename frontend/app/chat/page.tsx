@@ -40,6 +40,15 @@ export default function ChatPage() {
     const res = await fetch(`${API_BASE}/documents/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    
+    // If unauthorized, clear token and redirect to login
+    if (res.status === 401) {
+      chatLogger.warn("Token expired or invalid, redirecting to login");
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+      return;
+    }
+    
     const data = await res.json();
     chatLogger.info("Documents loaded", { count: data.documents?.length || 0 });
     setDocs(data.documents ?? []);
@@ -86,7 +95,17 @@ export default function ChatPage() {
       const res = await fetch(`${API_BASE}/documents/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
+      // If unauthorized, clear token and redirect to login
+      if (res.status === 401) {
+        chatLogger.warn("Token expired or invalid, redirecting to login");
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
+      
       const data = await res.json();
+      chatLogger.info("Documents loaded on mount", { count: data.documents?.length || 0 });
       setDocs(data.documents ?? []);
     };
     loadDocs();

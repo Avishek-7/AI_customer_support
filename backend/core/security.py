@@ -91,8 +91,11 @@ def decode_access_token(token: str) -> Optional[str]:
         user_id: str = payload.get("sub")
         logger.debug(f"Token decoded", extra={"user_id": user_id})
         return user_id
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return None
     except JWTError as e:
-        logger.warning(f"Token decode failed", extra={"error": str(e)})
+        logger.warning(f"Token decode failed", extra={"error": str(e), "token_preview": token[:20] + "..." if len(token) > 20 else token})
         return None
     
 # ------ Get Current User -----

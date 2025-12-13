@@ -139,7 +139,11 @@ async def chat_stream(
         docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
         document_ids = [d.id for d in docs]
     
-    logger.info(f"Streaming from AI engine", extra={"document_count": len(document_ids)})
+    logger.info(f"Streaming from AI engine", extra={
+        "document_count": len(document_ids),
+        "document_ids": document_ids,
+        "selected_by_user": body.document_ids is not None and len(body.document_ids) > 0
+    })
 
     # SSE generator
     async def event_generator():

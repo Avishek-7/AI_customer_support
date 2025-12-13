@@ -63,11 +63,24 @@ async def stream_llm_answer(question, context_chunks, system_prompt, chat_histor
     )
 
     token_count = 0
+    full_response = ""
+    
     try:
         async for chunk in llm.astream(prompt):
             content = getattr(chunk, 'content', None)
             if content is not None and content != "":
                 token_count += 1
+                full_response += content
+                
+                # Detect repetition loop - if the same phrase appears multiple times, stop
+                if len(full_response) > 200:
+                    # Check for repeated patterns (looking for 30+ char sequences appearing twice)
+                    last_100 = full_response[-100:]
+                    earlier = full_response[:-100]
+                    if last_100 in earlier:
+                        logger.warning("Repetition loop detected, stopping stream")
+                        break
+                
                 yield content
     except Exception as e:
         logger.error(f"Streaming error: {e}", exc_info=True)

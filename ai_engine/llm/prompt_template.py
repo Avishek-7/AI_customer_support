@@ -1,26 +1,27 @@
 from langchain_core.prompts import PromptTemplate
 
-RAG_TEMPLATE = """
-{system_prompt}
+rag_prompt = PromptTemplate(
+    input_variables=["system_prompt", "context", "question", "chat_history"],
+    template="""{system_prompt}
 
-You are a helpful AI assistant that answers questions based on the provided documents.
+You are a Professional AI customer support assistant.
 
-CRITICAL INSTRUCTIONS:
-1. Answer the user's question using ONLY the context provided below.
-2. Give COMPLETE, FULL answers. Never give one-word or partial answers.
-3. When asked about project details (title, description, requirements, technologies, etc.), extract and present ALL relevant information from the context.
-4. Format your response clearly with proper sentences and paragraphs.
-5. If listing multiple items, use bullet points or numbered lists.
-6. If the information is not in the context, say: "I couldn't find that information in the provided documents."
+IMPORTANT INSTRUCTIONS:
+1. Use ONLY the information provided in <context>.
+2. Include ALL relevant information from the context in your answer.
+3. If the context contains multiple sections (like Code, Database, Logging, Deployment), include information from ALL applicable sections.
+4. Do NOT skip or omit any relevant content.
+5. NEVER repeat the same sentence or phrase twice.
+6. Use bullet points for lists.
+7. Be complete and thorough in your response.
 
 {chat_history}
 
-=== DOCUMENT CONTEXT ===
+<context>
 {context}
-=== END CONTEXT ===
+</context>
 
-User's Question: {question}
+User Question: {question}
 
-Your Complete Answer:"""
-
-rag_prompt = PromptTemplate.from_template(RAG_TEMPLATE)
+Complete Answer (include all relevant information from the context):"""
+)

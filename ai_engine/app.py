@@ -195,6 +195,92 @@ def delete_document_endpoint(document_id: int):
         status="deleted"
     )
 
+
+# Diagnostic endpoint to inspect what chunks are stored for a document
+@app.get("/debug/document/{document_id}")
+def debug_document_chunks(document_id: int):
+    """
+    Debug endpoint: show all chunks stored in FAISS for a given document_id.
+    Use this to verify what content was actually indexed.
+    """
+    from vectorstore.vector_store import load_index_and_metadata
+    
+    index, metadata = load_index_and_metadata()
+    
+    # Find all chunks for this document
+    doc_chunks = [m for m in metadata if m.get("document_id") == document_id]
+    
+    return {
+        "document_id": document_id,
+        "total_chunks_in_index": index.ntotal,
+        "chunks_for_document": len(doc_chunks),
+        "chunks": [
+            {
+                "chunk_id": c.get("chunk_id"),
+                "title": c.get("title"),
+                "text_preview": c.get("text", "")[:200] + "..." if len(c.get("text", "")) > 200 else c.get("text", "")
+            }
+            for c in doc_chunks
+        ]
+    }
+
+
+@app.get("/debug/all-documents")
+def debug_all_documents():
+    """
+    Debug endpoint: list all document_ids in FAISS and their chunk counts.
+    """
+    from vectorstore.vector_store import load_index_and_metadata
+    
+    index, metadata = load_index_and_metadata()
+    
+    # Group by document_id
+    doc_counts = {}
+    for m in metadata:
+        doc_id = m.get("document_id")
+        if doc_id not in doc_counts:
+            doc_counts[doc_id] = {"count": 0, "title": m.get("title", "Unknown")}
+        doc_counts[doc_id]["count"] += 1
+    
+    return {
+        "total_vectors": index.ntotal,
+        "documents": [
+            {"document_id": doc_id, "title": info["title"], "chunk_count": info["count"]}
+            for doc_id, info in sorted(doc_counts.items())
+        ]
+    }
+
+
+@app.get("/debug/search-preview")
+def debug_search_preview(query: str, document_id: int = None, k: int = 5):
+    """
+    Debug endpoint: show what chunks would be retrieved for a query.
+    Helps diagnose retrieval issues.
+    """
+    from embeddings.embedder import embed_text
+    from vectorstore.vector_store import search_embeddings
+    
+    query_emb = embed_text(query)
+    doc_ids = [document_id] if document_id else None
+    results = search_embeddings(query_emb, k=k, document_ids=doc_ids)
+    
+    return {
+        "query": query,
+        "document_filter": document_id,
+        "results_count": len(results),
+        "chunks": [
+            {
+                "document_id": r.get("document_id"),
+                "chunk_id": r.get("chunk_id"),
+                "title": r.get("title"),
+                "score": r.get("score"),
+                "text_preview": r.get("text", "")[:300] + "..." if len(r.get("text", "")) > 300 else r.get("text", "")
+            }
+            for r in results
+        ]
+    }
+
+
 @app.post("/stream")
 async def stream_answer(body: QueryRequest):
     req_id = str(uuid.uuid4())[:8]

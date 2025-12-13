@@ -133,7 +133,7 @@ def answer_query(
         session_id: str,
         system_prompt: str = "You are an AI customer support assistant.",
         document_ids: Optional[List[int]] = None,
-        k: int = 5,
+        k: int = 10,  # Retrieve more chunks to ensure complete answers
 ) -> Dict[str, Any]:
     
     logger.info("Processing RAG query", extra={
@@ -158,7 +158,8 @@ def answer_query(
     logger.info(f"Retrieved {len(docs)} chunks for query")
 
     # Prepare context for LLM
-    context_chunks = [doc.page_content for doc in docs]
+    raw_chunks = [doc.page_content for doc in docs]
+    context_chunks = _prepare_context_list(raw_chunks)
 
     # Render chat history to text for the LLM prompt
     history_text = "\n".join(
@@ -202,7 +203,7 @@ def answer_query(
 
 async def answer_query_stream(req):
     query = req.query
-    k = req.k or 5
+    k = req.k or 10  # Retrieve more chunks to ensure complete answers
     document_ids = req.document_ids
 
     logger.info("Processing streaming query", extra={
@@ -225,26 +226,62 @@ async def answer_query_stream(req):
 
     # Retrieve docs with document filtering applied at search level
     results = search_embeddings(query_emb, k=k, document_ids=document_ids)
-    logger.info(f"Retrieved {len(results)} chunks for streaming query", extra={
-        "document_ids": [r.get("document_id") for r in results]
+    
+    # Remove highly overlapping chunks - keep only chunks with < 50% content overlap
+    filtered_results = []
+    for i, result in enumerate(results):
+        is_redundant = False
+        current_text = result.get("text", "").lower()
+        
+        for existing in filtered_results:
+            existing_text = existing.get("text", "").lower()
+            # Calculate overlap ratio
+            overlap_count = sum(1 for c in current_text if c in existing_text)
+            overlap_ratio = overlap_count / len(current_text) if len(current_text) > 0 else 0
+            
+            if overlap_ratio > 0.5:  # More than 50% overlap = redundant
+                is_redundant = True
+                break
+        
+        if not is_redundant:
+            filtered_results.append(result)
+    
+    results = filtered_results
+    logger.info(f"Retrieved {len(results)} chunks for streaming query (after dedup)", extra={
+        "document_ids": [r.get("document_id") for r in results],
+        "chunk_ids": [r.get("chunk_id") for r in results],
+        "chunk_titles": [r.get("title", "")[:50] for r in results],
+        "chunk_previews": [r.get("text", "")[:80] for r in results]
     })
 
-    context_chunks = [r.get("text", "") for r in results]
+    # Deduplicate context chunks to avoid repetition
+    raw_chunks = [r.get("text", "") for r in results]
+    context_chunks = _prepare_context_list(raw_chunks)
     sources = results
     
-    # Track full answer for logging
+    # Track full answer for logging and duplicate detection
     full_answer_tokens = []
+    full_answer_so_far = ""
     
     # Stream LLM - pass history for better responses
-    if context_chunks:
-        async for token in stream_llm_answer(query, context_chunks, req.system_prompt, history_text):
-            full_answer_tokens.append(token)
-            yield {"type": "token", "content": token}
-    else:
-        logger.warning("No context chunks found, streaming without context")
-        async for token in stream_llm_answer(query, [], req.system_prompt, history_text):
-            full_answer_tokens.append(token)
-            yield {"type": "token", "content": token}
+    async for token in stream_llm_answer(query, context_chunks, req.system_prompt, history_text):
+        # Skip empty tokens
+        if not token:
+            continue
+        
+        # Detect if token would cause repetition (check if this text already appeared)
+        if len(full_answer_so_far) > 50:
+            # Check if the new token is repeating recent content
+            recent_text = full_answer_so_far[-100:]
+            if token.strip() and token.strip() in recent_text:
+                # Might be starting to repeat, check for longer pattern
+                if len(token.strip()) > 3:
+                    logger.debug(f"Skipping potentially repeated token: {token[:20]}")
+                    continue
+        
+        full_answer_tokens.append(token)
+        full_answer_so_far += token
+        yield {"type": "token", "content": token}
     
     # Log the complete streamed answer for debugging/comparison
     full_answer = "".join(full_answer_tokens)
@@ -263,3 +300,33 @@ async def answer_query_stream(req):
         "type": "sources",
         "sources": sources
     }
+
+
+def _prepare_context_list(chunks: List[str], max_chars: int = 10000) -> List[str]:
+    """
+    Prepare context chunks for LLM.
+    Overlapping chunks have already been filtered in answer_query_stream().
+    """
+    cleaned_chunks = []
+    total_chars = 0
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk or len(chunk) < 20:
+            continue
+
+        cleaned_chunks.append(chunk)
+        total_chars += len(chunk)
+        
+        if total_chars > max_chars:
+            break
+    
+    return cleaned_chunks
+
+
+# def _prepare_context(chunks: List[str], max_chars: int = 3500) -> str:
+#     """
+#     Deduplicate and trim context to avoid repetition and overload.
+#     Returns a joined string for streaming.
+#     """
+#     return "\n\n".join(_prepare_context_list(chunks, max_chars))
