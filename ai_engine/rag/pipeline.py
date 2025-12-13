@@ -227,24 +227,28 @@ async def answer_query_stream(req):
     # Retrieve docs with document filtering applied at search level
     results = search_embeddings(query_emb, k=k, document_ids=document_ids)
     
-    # Remove highly overlapping chunks - keep only chunks with < 50% content overlap
+    logger.info(f"FAISS search returned {len(results)} chunks BEFORE dedup", extra={
+        "document_ids_in_results": [r.get("document_id") for r in results],
+        "filter_document_ids": document_ids
+    })
+    
+    # Only remove exact or near-exact duplicate chunks within the same document
+    # Different documents can have similar structure, so preserve cross-document chunks
     filtered_results = []
-    for i, result in enumerate(results):
-        is_redundant = False
-        current_text = result.get("text", "").lower()
+    seen_chunks = {}  # key: (doc_id, text_hash), value: text
+    
+    for result in results:
+        doc_id = result.get("document_id")
+        chunk_text = result.get("text", "").strip()
         
-        for existing in filtered_results:
-            existing_text = existing.get("text", "").lower()
-            # Calculate overlap ratio
-            overlap_count = sum(1 for c in current_text if c in existing_text)
-            overlap_ratio = overlap_count / len(current_text) if len(current_text) > 0 else 0
-            
-            if overlap_ratio > 0.5:  # More than 50% overlap = redundant
-                is_redundant = True
-                break
+        # Skip if this exact chunk from same document was already seen
+        chunk_key = (doc_id, hash(chunk_text))
+        if chunk_key in seen_chunks:
+            logger.debug(f"Skipping exact duplicate chunk from document {doc_id}")
+            continue
         
-        if not is_redundant:
-            filtered_results.append(result)
+        filtered_results.append(result)
+        seen_chunks[chunk_key] = chunk_text
     
     results = filtered_results
     logger.info(f"Retrieved {len(results)} chunks for streaming query (after dedup)", extra={
@@ -294,6 +298,9 @@ async def answer_query_stream(req):
         "sources_count": len(sources)
     })
     logger.info(f"[PIPELINE_STREAM_ANSWER] {full_answer[:500]}..." if len(full_answer) > 500 else f"[PIPELINE_STREAM_ANSWER] {full_answer}")
+
+    # Save conversation to memory for chat history continuity
+    save_turn(req.session_id, user_message=query, ai_message=full_answer)
 
     # Final event with sources
     yield {

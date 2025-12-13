@@ -194,10 +194,23 @@ export default function ChatPage() {
             
             if (event.type === "token") {
                 tokenCount++;
+                const content = event.content;
+                
+                // Client-side duplicate detection - skip if this exact content was recently added
+                // Check if this chunk would create visible repetition
+                if (content && content.length > 10 && fullAnswer.length > 100) {
+                    const lastPart = fullAnswer.slice(-150).toLowerCase();
+                    const newPart = content.toLowerCase();
+                    if (lastPart.includes(newPart) && newPart.trim().length > 5) {
+                        chatLogger.debug("Skipping duplicate token on frontend", { token: content.slice(0, 30) });
+                        continue;
+                    }
+                }
+                
                 // Track token for answer logging
-                fullAnswer += event.content;
+                fullAnswer += content;
                 // AI engine sends content, not token
-                upsertAssistantChunk(event.content);
+                upsertAssistantChunk(content);
             }       
             else if (event.type === "sources") {
                 // attach sources to the last assistant message

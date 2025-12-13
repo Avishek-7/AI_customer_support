@@ -48,7 +48,8 @@ async def chat_with_ai(
         "document_ids": body.document_ids
     })
     
-    if body.document_ids:
+    # Only filter by document_ids if user explicitly selected specific documents
+    if body.document_ids and len(body.document_ids) > 0:
         user_docs = (
             db.query(Document)
             .filter(
@@ -57,23 +58,12 @@ async def chat_with_ai(
             )
             .all()
         )
+        document_ids = [doc.id for doc in user_docs]
     else:
-        # Fetch user's documents from DB
-        user_docs = (
-            db.query(Document)
-            .filter(Document.owner_id == current_user.id)
-        .all()
-    )
+        # No selection - search ALL documents in FAISS (pass None)
+        document_ids = None
 
-    if not user_docs:
-        logger.warning(f"No documents found for user", extra={"user_id": current_user.id})
-        raise HTTPException(
-            status_code=400,
-            detail="You have no indexed documents. Please upload a PDF first."
-        )
-    
-    document_ids = [doc.id for doc in user_docs]
-    logger.info(f"Querying AI engine", extra={"document_count": len(document_ids)})
+    logger.info(f"Querying AI engine", extra={"document_count": len(document_ids) if document_ids else "ALL"})
 
     # Call AI Engine
     async with httpx.AsyncClient() as client:
@@ -83,7 +73,7 @@ async def chat_with_ai(
                 json={
                     "query": body.message,
                     "system_prompt": body.system_prompt,
-                    "document_ids": document_ids,
+                    "document_ids": document_ids,  # None means search all
                     "k": 5,
                 },
                 timeout=40.0,
@@ -126,23 +116,25 @@ async def chat_stream(
         "document_ids": body.document_ids
     })
     
-    # Use selected document_ids from request, or fall back to all user docs
-    if body.document_ids:
+    # Only filter by document_ids if user explicitly selected specific documents
+    # If no selection, pass None to search ALL indexed documents in FAISS
+    if body.document_ids and len(body.document_ids) > 0:
         # Validate that user owns these documents
         docs = db.query(Document).filter(
             Document.owner_id == current_user.id,
             Document.id.in_(body.document_ids)
         ).all()
         document_ids = [d.id for d in docs]
+        user_selected_docs = True
     else:
-        # No selection - use all user's documents
-        docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
-        document_ids = [d.id for d in docs]
+        # No selection - search ALL documents in FAISS (pass None)
+        document_ids = None
+        user_selected_docs = False
     
     logger.info(f"Streaming from AI engine", extra={
-        "document_count": len(document_ids),
+        "document_count": len(document_ids) if document_ids else "ALL",
         "document_ids": document_ids,
-        "selected_by_user": body.document_ids is not None and len(body.document_ids) > 0
+        "selected_by_user": user_selected_docs
     })
 
     # SSE generator
@@ -156,7 +148,7 @@ async def chat_stream(
                     "query": body.message,
                     "session_id": str(current_user.id),
                     "system_prompt": body.system_prompt,
-                    "document_ids": document_ids,
+                    "document_ids": document_ids,  # None means search all
                 },
                 timeout=None,
             ) as stream:

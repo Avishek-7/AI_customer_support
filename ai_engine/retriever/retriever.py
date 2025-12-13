@@ -1,4 +1,5 @@
 from typing import List, Optional
+from pydantic import Field
 
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
@@ -18,15 +19,21 @@ class FAISSRetriever(BaseRetriever):
 
     This integrates LangChain's retriever interface with existing infra.
     """
+    
+    k: int = Field(default=5, description="Number of documents to retrieve")
+    allowed_document_ids: Optional[set] = Field(default=None, description="Optional filter for specific document IDs")
 
     def __init__(
             self,
             k: int = 5,
             allowed_document_ids: Optional[List[int]] = None,
+            **kwargs
     ):
-        super().__init__()
-        self.k = k
-        self.allowed_document_ids = set(allowed_document_ids) if allowed_document_ids else None
+        super().__init__(
+            k=k,
+            allowed_document_ids=set(allowed_document_ids) if allowed_document_ids else None,
+            **kwargs
+        )
 
     def _filter_hits_by_document_ids(self, hits: List[dict]) -> List[dict]:
         if not self.allowed_document_ids:
@@ -57,16 +64,17 @@ class FAISSRetriever(BaseRetriever):
         # 1) embed query
         q_embedding = embed_text(query)
 
-        # 2) search FAISS (over-retrieve a bit)
-        hits = search_embeddings(q_embedding, k=self.k * 3)
+        # 2) search FAISS (over-retrieve a bit) - pass document_ids filter
+        hits = search_embeddings(
+            q_embedding, 
+            k=self.k * 3,
+            document_ids=list(self.allowed_document_ids) if self.allowed_document_ids else None
+        )
 
-        # 3) filter by allowed document_ids (if any)
-        hits = self._filter_hits_by_document_ids(hits)
-
-        # 4) keep top-k
+        # 3) keep top-k (already filtered by search_embeddings)
         hits = hits[: self.k]
 
-        # 5) convert to LangChain Documents
+        # 4) convert to LangChain Documents
         docs = self._hits_to_documents(hits)
         
         logger.info(f"Retrieved documents", extra={"count": len(docs)})

@@ -157,6 +157,17 @@ def search_embeddings(
         logger.warning("FAISS index is empty, returning no results")
         return []
     
+    # Log what document IDs exist in FAISS for debugging
+    existing_doc_ids = list(set(m.get("document_id") for m in metadata))
+    logger.info(f"FAISS contains document IDs: {existing_doc_ids}")
+    
+    if document_ids:
+        matching_ids = [d for d in document_ids if d in existing_doc_ids]
+        if not matching_ids:
+            logger.warning(f"No matching document IDs! Requested: {document_ids}, Available: {existing_doc_ids}")
+        else:
+            logger.info(f"Filtering to document IDs: {matching_ids}")
+    
     query_embedding = query_embedding.reshape(1, -1).astype("float32")
 
     # If filtering, retrieve more candidates to ensure we get enough after filtering
