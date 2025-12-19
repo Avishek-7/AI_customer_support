@@ -10,6 +10,10 @@ A full-stack AI-powered customer support application with a Next.js frontend, a 
 - **Source citations** - See which documents and chunks were used for each answer
 - **Chat history** - Session-based conversation memory for contextual follow-ups
 - **Google Gemini LLM** - Powered by `gemini-2.5-flash` model
+- **MMR Reranking** - Maximal Marginal Relevance for diverse, non-redundant results
+- **Confidence Scoring** - Quality metrics for each answer
+- **Hallucination Detection** - Automatic source-answer alignment checking
+- **Answer Postprocessing** - Removes duplicates and cleans formatting
 
 ### 📄 Document Management
 - **PDF upload** - Drag & drop or browse to upload PDF documents
@@ -29,6 +33,13 @@ A full-stack AI-powered customer support application with a Next.js frontend, a 
 - **Real-time typing indicator** - "AI is thinking..." with animated dots
 - **Markdown support** - AI responses render with proper formatting
 - **Syntax highlighting** - Code blocks with language-specific highlighting
+
+### 🎯 Advanced Quality Features
+- **Self-Critique** - LLM judges its own answers for accuracy and quality
+- **Context Inspection** - Debug and verify retrieved chunks before answering
+- **Answer Regeneration** - Regenerate answers with user-specified constraints
+- **Hallucination Detection** - Embedding-based alignment scoring (0-1 scale)
+- **Risk Assessment** - Low/Medium/High hallucination risk levels
 
 ## 🏗️ Architecture
 
@@ -60,10 +71,11 @@ ai-customer-support/
 │   └── schemas/       # Pydantic schemas
 └── ai_engine/         # RAG pipeline (Python)
     ├── embeddings/    # Sentence transformer embeddings
-    ├── llm/           # Gemini LLM integration & prompts
+    ├── llm/           # Gemini LLM integration, prompts, critique & regeneration
     ├── rag/           # Chunking & pipeline orchestration
-    ├── retriever/     # FAISS retriever
-    └── vectorstore/   # FAISS index management
+    ├── retriever/     # FAISS retriever & MMR reranking
+    ├── vectorstore/   # FAISS index management
+    └── utils/         # Confidence, hallucination detection, postprocessing
 ```
 
 ## 🚀 Quick Start
@@ -172,6 +184,9 @@ npm run dev
 | POST | `/stream` | Query documents (streaming) |
 | PUT | `/update-document` | Re-index updated document |
 | DELETE | `/delete-document/{id}` | Remove document from index |
+| POST | `/inspect-context` | View retrieved chunks without generating answer |
+| POST | `/critique` | LLM self-critique of answer quality |
+| POST | `/regenerate` | Regenerate answer with constraints |
 
 ## 🛠️ Tech Stack
 
@@ -191,11 +206,13 @@ npm run dev
 - **httpx** - Async HTTP client
 
 ### AI Engine
-- **Google Gemini** - LLM (gemini-2.0-flash-exp)
+- **Google Gemini** - LLM (gemini-2.5-flash)
 - **Sentence Transformers** - Text embeddings (all-MiniLM-L6-v2)
 - **FAISS** - Vector similarity search
-- **LangChain** - Text chunking utilities
+- **LangChain** - Text chunking & chat memory
 - **PyMuPDF** - PDF text extraction
+- **scikit-learn** - Cosine similarity & MMR reranking
+- **NumPy** - Vector operations for hallucination detection
 
 ## 📁 Data Storage
 

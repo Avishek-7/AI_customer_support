@@ -10,6 +10,7 @@ from utils.config import settings
 from utils.logger import get_logger
 from utils.postprocess import postprocess_answer
 from utils.confidence import compute_confidence
+from utils.hallucination import detect_hallucination
 import httpx
 import numpy as np
 
@@ -222,10 +223,19 @@ def answer_query(
         "sources_count": len(sources)
     })
     
+    # Detect potential hallucinations
+    hallucination_result = detect_hallucination(answer, sources)
+    logger.info("Hallucination detection completed", extra={
+        "hallucination_score": hallucination_result.get("hallucination_score"),
+        "alignment_score": hallucination_result.get("alignment_score"),
+        "risk_level": hallucination_result.get("details", {}).get("risk_level")
+    })
+    
     return {
         "answer": answer,
         "sources": sources,
-        "confidence": confidence
+        "confidence": confidence,
+        "hallucination_detection": hallucination_result
     }
 
 async def answer_query_stream(req):
@@ -351,12 +361,21 @@ async def answer_query_stream(req):
         "answer_length": len(full_answer),
         "sources_count": len(sources)
     })
+    
+    # Detect potential hallucinations
+    hallucination_result = detect_hallucination(full_answer, sources)
+    logger.info("Hallucination detection completed", extra={
+        "hallucination_score": hallucination_result.get("hallucination_score"),
+        "alignment_score": hallucination_result.get("alignment_score"),
+        "risk_level": hallucination_result.get("details", {}).get("risk_level")
+    })
 
-    # Final event with sources and confidence
+    # Final event with sources, confidence, and hallucination detection
     yield {
         "type": "sources",
         "sources": sources,
-        "confidence": confidence
+        "confidence": confidence,
+        "hallucination_detection": hallucination_result
     }
 
 

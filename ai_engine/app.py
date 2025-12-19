@@ -8,6 +8,10 @@ import uuid
 from rag.pipeline import index_document, answer_query, update_document, answer_query_stream
 from vectorstore.vector_store import delete_document
 from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
+from llm.llm import critique_answer, regenerate_answer
+from utils.hallucination import detect_hallucination
+from embeddings.embedder import embed_text
+from vectorstore.vector_store import search_embeddings
 
 # Initialize logging on startup
 init_logging()
@@ -55,6 +59,44 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
+
+
+class InspectContextRequest(BaseModel):
+    query: str
+    document_ids: Optional[List[int]] = None
+    k: Optional[int] = 5
+
+
+class InspectContextResponse(BaseModel):
+    query: str
+    chunks: List[Dict[str, Any]]
+    total_retrieved: int
+
+
+class CritiqueRequest(BaseModel):
+    question: str
+    answer: str
+    sources: List[Dict[str, Any]]
+
+
+class CritiqueResponse(BaseModel):
+    critique: Dict[str, Any]
+
+
+class RegenerateRequest(BaseModel):
+    session_id: str
+    query: str
+    constraints: str
+    system_prompt: Optional[str] = "You are an AI customer support assistant."
+    document_ids: Optional[List[int]] = None
+    k: Optional[int] = 5
+    previous_answer: Optional[str] = None
+
+
+class RegenerateResponse(BaseModel):
+    answer: str
+    sources: List[Dict[str, Any]]
+    regeneration_info: Dict[str, Any]
 
 
 # Routes
@@ -310,3 +352,155 @@ async def stream_answer(body: QueryRequest):
             clear_request_id()
             
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/inspect-context", response_model=InspectContextResponse)
+def inspect_context_endpoint(body: InspectContextRequest):
+    """
+    Inspect what chunks would be retrieved for a query without generating an answer.
+    Useful for debugging retrieval and understanding what context the LLM would receive.
+    """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info("Inspecting context", extra={
+        "query": body.query[:100],
+        "document_ids": body.document_ids,
+        "k": body.k
+    })
+    
+    try:
+        # Embed query and search
+        query_emb = embed_text(body.query)
+        results = search_embeddings(query_emb, k=body.k, document_ids=body.document_ids)
+        
+        # Format chunks for response
+        chunks = [
+            {
+                "document_id": r.get("document_id"),
+                "chunk_id": r.get("chunk_id"),
+                "title": r.get("title"),
+                "text": r.get("text"),
+                "score": r.get("score")
+            }
+            for r in results
+        ]
+        
+        logger.info(f"Context inspection completed", extra={
+            "chunks_retrieved": len(chunks)
+        })
+        
+        return {
+            "query": body.query,
+            "chunks": chunks,
+            "total_retrieved": len(chunks)
+        }
+    finally:
+        clear_request_id()
+
+
+@app.post("/critique", response_model=CritiqueResponse)
+def critique_endpoint(body: CritiqueRequest):
+    """
+    Have the LLM critique/judge an existing answer for quality, accuracy, and relevance.
+    Also includes hallucination detection scoring.
+    """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info("Critiquing answer", extra={
+        "question": body.question[:100],
+        "answer_length": len(body.answer),
+        "sources_count": len(body.sources)
+    })
+    
+    try:
+        # Get context chunks from sources
+        context_chunks = [s.get("text", "") for s in body.sources if s.get("text")]
+        
+        # LLM self-critique
+        llm_critique = critique_answer(
+            question=body.question,
+            answer=body.answer,
+            context_chunks=context_chunks
+        )
+        
+        # Hallucination detection
+        hallucination_result = detect_hallucination(
+            answer=body.answer,
+            sources=body.sources
+        )
+        
+        # Combine both critiques
+        combined_critique = {
+            "llm_critique": llm_critique,
+            "hallucination_detection": hallucination_result
+        }
+        
+        logger.info("Critique completed", extra={
+            "overall_score": llm_critique.get("overall_score"),
+            "hallucination_score": hallucination_result.get("hallucination_score")
+        })
+        
+        return {"critique": combined_critique}
+    finally:
+        clear_request_id()
+
+
+@app.post("/regenerate", response_model=RegenerateResponse)
+def regenerate_endpoint(body: RegenerateRequest):
+    """
+    Regenerate an answer with specific user constraints.
+    Examples: "make it shorter", "add more detail", "use simpler language", "be more technical"
+    """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    
+    logger.info("Regenerating answer", extra={
+        "query": body.query[:100],
+        "constraints": body.constraints[:100],
+        "session_id": body.session_id
+    })
+    
+    try:
+        # Retrieve context (same as query endpoint)
+        query_emb = embed_text(body.query)
+        results = search_embeddings(query_emb, k=body.k, document_ids=body.document_ids)
+        
+        context_chunks = [r.get("text", "") for r in results if r.get("text")]
+        
+        # Get chat history
+        from llm.memory import get_memory
+        memory = get_memory(body.session_id)
+        history = memory.messages if memory else []
+        history_text = "\n".join(
+            f"User: {m.content}" if getattr(m, "type", "") == "human" else f"Assistant: {getattr(m, 'content', m)}"
+            for m in history
+        ) if history else ""
+        
+        # Regenerate with constraints
+        new_answer = regenerate_answer(
+            question=body.query,
+            context_chunks=context_chunks,
+            constraints=body.constraints,
+            system_prompt=body.system_prompt,
+            chat_history=history_text,
+            previous_answer=body.previous_answer
+        )
+        
+        logger.info("Answer regenerated", extra={
+            "new_answer_length": len(new_answer),
+            "sources_count": len(results)
+        })
+        
+        return {
+            "answer": new_answer,
+            "sources": results,
+            "regeneration_info": {
+                "constraints_applied": body.constraints,
+                "had_previous_answer": bool(body.previous_answer),
+                "sources_used": len(results)
+            }
+        }
+    finally:
+        clear_request_id()

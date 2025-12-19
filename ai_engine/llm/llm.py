@@ -136,3 +136,149 @@ def _remove_duplicate_sentences(text: str) -> str:
     # Rejoin with newlines to preserve formatting
     result = '\n'.join(unique_lines)
     return result
+
+
+def critique_answer(
+    question: str,
+    answer: str,
+    context_chunks: List[str],
+) -> dict:
+    """
+    Have the LLM judge/critique its own answer for quality, accuracy, and relevance.
+    
+    Returns a structured critique with scores and feedback.
+    """
+    logger.info("Generating self-critique", extra={
+        "question": question[:100],
+        "answer_length": len(answer),
+        "context_chunks_count": len(context_chunks)
+    })
+    
+    context = "\n\n".join(context_chunks)
+    
+    critique_prompt = f"""You are an AI quality evaluator. Judge the following answer for accuracy, relevance, and quality.
+
+QUESTION:
+{question}
+
+CONTEXT PROVIDED:
+{context}
+
+ANSWER TO EVALUATE:
+{answer}
+
+Provide your critique in the following JSON format:
+{{
+  "accuracy_score": <0-10>,
+  "relevance_score": <0-10>,
+  "completeness_score": <0-10>,
+  "clarity_score": <0-10>,
+  "overall_score": <0-10>,
+  "strengths": ["strength1", "strength2"],
+  "weaknesses": ["weakness1", "weakness2"],
+  "suggestions": ["suggestion1", "suggestion2"],
+  "grounded_in_context": <true/false>,
+  "summary": "brief summary of the critique"
+}}
+
+Evaluate carefully and be honest about strengths and weaknesses."""
+
+    try:
+        result = llm.invoke(critique_prompt)
+        critique_text = result.content
+        
+        # Try to extract JSON from the response
+        import json
+        import re
+        
+        # Find JSON block in response
+        json_match = re.search(r'\{.*\}', critique_text, re.DOTALL)
+        if json_match:
+            critique_data = json.loads(json_match.group())
+            logger.info("Self-critique generated", extra={
+                "overall_score": critique_data.get("overall_score"),
+                "grounded_in_context": critique_data.get("grounded_in_context")
+            })
+            return critique_data
+        else:
+            # Fallback if JSON parsing fails
+            return {
+                "overall_score": 5,
+                "summary": critique_text,
+                "error": "Could not parse structured critique"
+            }
+    except Exception as e:
+        logger.error(f"Critique generation error: {e}", exc_info=True)
+        return {
+            "overall_score": 0,
+            "summary": f"Error generating critique: {str(e)}",
+            "error": str(e)
+        }
+
+
+def regenerate_answer(
+    question: str,
+    context_chunks: List[str],
+    constraints: str,
+    system_prompt: str = "You are an AI customer support assistant.",
+    chat_history: Optional[str] = "",
+    previous_answer: Optional[str] = None
+) -> str:
+    """
+    Regenerate an answer with specific constraints or modifications.
+    
+    Args:
+        question: The original question
+        context_chunks: Retrieved context
+        constraints: User-specified constraints (e.g., "make it shorter", "add more detail", "use simpler language")
+        system_prompt: System instruction
+        chat_history: Conversation history
+        previous_answer: The previous answer to improve upon (optional)
+    """
+    logger.info("Regenerating answer with constraints", extra={
+        "question": question[:100],
+        "constraints": constraints[:100],
+        "has_previous": bool(previous_answer)
+    })
+    
+    context = "\n\n".join(context_chunks)
+    
+    # Build regeneration prompt
+    regeneration_prompt = f"""{system_prompt}
+
+CONTEXT:
+{context}
+
+CHAT HISTORY:
+{chat_history}
+
+QUESTION:
+{question}
+"""
+    
+    if previous_answer:
+        regeneration_prompt += f"""
+PREVIOUS ANSWER:
+{previous_answer}
+
+USER REQUEST:
+{constraints}
+
+Please regenerate your answer following the user's request above."""
+    else:
+        regeneration_prompt += f"""
+SPECIAL INSTRUCTIONS:
+{constraints}
+
+Please answer the question following the special instructions above."""
+    
+    try:
+        result = llm.invoke(regeneration_prompt)
+        logger.info("Answer regenerated", extra={
+            "new_answer_length": len(result.content),
+            "constraints": constraints[:50]
+        })
+        return result.content
+    except Exception as e:
+        logger.error(f"Regeneration error: {e}", exc_info=True)
+        return f"[ERROR regenerating answer] {e}"
