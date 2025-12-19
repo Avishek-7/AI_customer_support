@@ -5,9 +5,13 @@ from rag.chunker import chunk_text
 from llm.llm import generate_answer, stream_llm_answer
 from llm.memory import get_memory, save_turn
 from retriever.retriever import FAISSRetriever
+from retriever.rerank import mmr
 from utils.config import settings
 from utils.logger import get_logger
+from utils.postprocess import postprocess_answer
+from utils.confidence import compute_confidence
 import httpx
+import numpy as np
 
 logger = get_logger("ai_engine.pipeline")
 
@@ -157,6 +161,18 @@ def answer_query(
     docs = retriever._get_relevant_documents(query)
     logger.info(f"Retrieved {len(docs)} chunks for query")
 
+    # Apply MMR reranking for better diversity
+    if len(docs) > 1:
+        query_emb = embed_text(query)
+        doc_texts = [doc.page_content for doc in docs]
+        doc_embs = embed_texts(doc_texts)
+        
+        # Get reranked indices using MMR
+        top_k = min(k, len(docs))
+        reranked_indices = mmr(query_emb, doc_embs, lambda_param=0.7, top_k=top_k)
+        docs = [docs[i] for i in reranked_indices]
+        logger.info(f"Applied MMR reranking, using top {len(docs)} diverse chunks")
+
     # Prepare context for LLM
     raw_chunks = [doc.page_content for doc in docs]
     context_chunks = _prepare_context_list(raw_chunks)
@@ -174,6 +190,9 @@ def answer_query(
         system_prompt=system_prompt,
         chat_history=history_text,
     )
+    
+    # Postprocess the answer to clean up formatting and remove repetitions
+    answer = postprocess_answer(answer)
     
     # Log the generated answer for debugging/comparison
     logger.info("=== PIPELINE GENERATED ANSWER ===", extra={
@@ -195,10 +214,18 @@ def answer_query(
         "answer_length": len(answer),
         "sources_count": len(sources)
     })
+
+    confidence = compute_confidence(sources, answer)
+    logger.info("Computed answer confidence", extra={
+        "confidence": confidence,
+        "answer_length": len(answer),
+        "sources_count": len(sources)
+    })
     
     return {
         "answer": answer,
         "sources": sources,
+        "confidence": confidence
     }
 
 async def answer_query_stream(req):
@@ -258,6 +285,17 @@ async def answer_query_stream(req):
         "chunk_previews": [r.get("text", "")[:80] for r in results]
     })
 
+    # Apply MMR reranking for better diversity
+    if len(results) > 1:
+        result_texts = [r.get("text", "") for r in results]
+        result_embs = embed_texts(result_texts)
+        
+        # Get reranked indices using MMR
+        top_k = min(k, len(results))
+        reranked_indices = mmr(query_emb, result_embs, lambda_param=0.7, top_k=top_k)
+        results = [results[i] for i in reranked_indices]
+        logger.info(f"Applied MMR reranking, using top {len(results)} diverse chunks")
+
     # Deduplicate context chunks to avoid repetition
     raw_chunks = [r.get("text", "") for r in results]
     context_chunks = _prepare_context_list(raw_chunks)
@@ -289,6 +327,10 @@ async def answer_query_stream(req):
     
     # Log the complete streamed answer for debugging/comparison
     full_answer = "".join(full_answer_tokens)
+    
+    # Postprocess the full answer to clean up formatting and remove repetitions
+    full_answer = postprocess_answer(full_answer)
+    
     logger.info("=== PIPELINE STREAMED ANSWER ===", extra={
         "session_id": req.session_id,
         "query": query,
@@ -302,10 +344,19 @@ async def answer_query_stream(req):
     # Save conversation to memory for chat history continuity
     save_turn(req.session_id, user_message=query, ai_message=full_answer)
 
-    # Final event with sources
+    # Compute confidence score
+    confidence = compute_confidence(sources, full_answer)
+    logger.info("Computed answer confidence", extra={
+        "confidence": confidence,
+        "answer_length": len(full_answer),
+        "sources_count": len(sources)
+    })
+
+    # Final event with sources and confidence
     yield {
         "type": "sources",
-        "sources": sources
+        "sources": sources,
+        "confidence": confidence
     }
 
 
