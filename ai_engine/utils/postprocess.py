@@ -5,7 +5,7 @@ def postprocess_answer(text: str) -> str:
         return text
     
     # Normalize whitespace 
-    text = re.split(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
 
     # Remove repeated sentences (simple heuristic)

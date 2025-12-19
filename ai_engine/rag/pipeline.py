@@ -149,7 +149,7 @@ def answer_query(
     
     # Get memory for session/user
     memory = get_memory(session_id)
-    history = memory.messages  # InMemoryChatHistory stores messages directly
+    history = memory.messages if memory else []
 
     # LangChain-compatible Retriever
     retriever = FAISSRetriever(
