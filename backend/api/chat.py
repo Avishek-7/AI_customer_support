@@ -4,9 +4,12 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 import httpx
+import time
 from core.database import get_db
 from core.security import get_current_user
 from core.config import settings
+from core.rate_limit import rate_limit
+from utils.usage_tracker import track_usage
 from models.user import User
 from models.document import Document
 from models.chat import ChatHistory
@@ -42,6 +45,12 @@ async def chat_with_ai(
     2. Send query + doc_ids to AI Engine /query
     3. Return answer + citations
     """
+    # Rate limiting check
+    rate_limit(current_user.id, limit=100, window=60)
+    
+    # Start timer for latency tracking
+    start_time = time.time()
+    
     logger.info(f"Chat request received", extra={
         "user_id": current_user.id,
         "message_length": len(body.message),
@@ -98,6 +107,11 @@ async def chat_with_ai(
     })
     logger.info(f"[BACKEND_RECEIVED] {data['answer'][:500]}..." if len(data["answer"]) > 500 else f"[BACKEND_RECEIVED] {data['answer']}")
 
+    # Track API usage
+    latency = time.time() - start_time
+    tokens = len(data["answer"].split())  # Approximate token count
+    track_usage(db, current_user.id, "/chat", tokens, latency)
+
     # Return formatted answer to frontend
     return ChatResponse(
         answer=data["answer"],
@@ -110,6 +124,9 @@ async def chat_stream(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Start timer for latency tracking
+    start_time = time.time()
+    
     logger.info(f"Stream chat request", extra={
         "user_id": current_user.id,
         "message_length": len(body.message),
@@ -176,6 +193,11 @@ async def chat_stream(
             "token_count": len(full_answer_tokens)
         })
         logger.info(f"[BACKEND_STREAM_RECEIVED] {full_answer[:500]}..." if len(full_answer) > 500 else f"[BACKEND_STREAM_RECEIVED] {full_answer}")
+        
+        # Track API usage
+        latency = time.time() - start_time
+        tokens = len(full_answer_tokens)
+        track_usage(db, current_user.id, "/chat/stream", tokens, latency)
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

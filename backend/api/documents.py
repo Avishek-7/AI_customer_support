@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 import httpx
+import time
 from core.database import get_db
 from core.config import settings
 from models.user import User
 from core.security import get_current_user
+from core.rate_limit import rate_limit
 from models.document import Document
+from rq import Queue
+from redis import Redis
+from jobs.tasks import index_document_task
 from schemas.document_schemas import (
     DocumentResponse,
     DocumentListResponse,
@@ -17,12 +22,17 @@ from schemas.document_schemas import (
 )
 from utils.pdf_loader import extract_text_from_pdf
 from utils.logger import get_logger
+from utils.usage_tracker import track_usage
+from utils.permissions import check_document_ownership
 
 logger = get_logger("backend.api.documents")
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 AI_ENGINE_URL = settings.AI_ENGINE_URL
+
+# Initialize RQ queue
+queue = Queue(connection=Redis())
 
 # ------ Upload Document -----
 @router.post("/upload", response_model=DocumentResponse)
@@ -32,6 +42,12 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Rate limit uploads (20 uploads per hour per user)
+    rate_limit(current_user.id, limit=20, window=3600)
+    
+    # Start timer for latency tracking
+    start_time = time.time()
+    
     logger.info(f"Document upload started", extra={
         "user_id": current_user.id,
         "title": title,
@@ -60,22 +76,17 @@ async def upload_document(
     db.refresh(document_db)
     logger.info(f"Document saved to database", extra={"document_id": document_db.id})
 
-    # Call AI Engine to index this document
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(
-                f"{AI_ENGINE_URL}/index-document",
-                json={
-                    "document_id": document_db.id,
-                    "title": document_db.title,
-                    "content": document_db.content,
-                },
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            logger.info(f"Document indexed by AI engine", extra={"document_id": document_db.id})
-        except Exception as e:
-            logger.error(f"AI engine indexing error", extra={"document_id": document_db.id, "error": str(e)})
+    # Enqueue indexing job to background queue
+    job = queue.enqueue(index_document_task, document_db.id, document_db.title, document_db.content)
+    logger.info(f"Document indexing job enqueued", extra={
+        "document_id": document_db.id,
+        "job_id": job.id
+    })
+
+    # Track API usage
+    latency = time.time() - start_time
+    tokens = len(content.split())  # Approximate token count based on content
+    track_usage(db, current_user.id, "/documents/upload", tokens, latency)
 
     return document_db
 
@@ -103,15 +114,9 @@ def get_document(
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Fetching document", extra={"user_id": current_user.id, "doc_id": doc_id})
-    doc = (
-        db.query(Document)
-        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
-        .first()
-    )
-
-    if not doc:
-        logger.warning(f"Document not found", extra={"user_id": current_user.id, "doc_id": doc_id})
-        raise HTTPException(status_code=404, detail="Document not found")
+    
+    # Check ownership - raises 404 if not found or access denied
+    doc = check_document_ownership(db, doc_id, current_user)
     
     logger.info(f"Document retrieved", extra={"doc_id": doc_id})
     return doc
@@ -126,15 +131,8 @@ async def update_document(
 ):
     logger.info(f"Updating document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
-    doc = (
-        db.query(Document)
-        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
-        .first()
-    )
-
-    if not doc: 
-        logger.warning(f"Document not found for update", extra={"doc_id": doc_id})
-        raise HTTPException(status_code=404, detail="Document not found")
+    # Check ownership - raises 404 if not found or access denied
+    doc = check_document_ownership(db, doc_id, current_user)
     
     if update_data.title:
         doc.title = update_data.title
@@ -146,22 +144,12 @@ async def update_document(
     db.refresh(doc)
     logger.info(f"Document updated in database", extra={"doc_id": doc_id})
 
-    # Tell AI Engine to re-index this updated document
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(
-                f"{AI_ENGINE_URL}/update-document",
-                json={
-                    "document_id": doc.id,
-                    "title": doc.title,
-                    "content": doc.content,
-                },
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            logger.info(f"Document re-indexed by AI engine", extra={"doc_id": doc_id})
-        except Exception as e:
-            logger.error(f"AI engine update error", extra={"doc_id": doc_id, "error": str(e)})
+    # Enqueue re-indexing job to background queue
+    job = queue.enqueue(index_document_task, doc.id, doc.title, doc.content)
+    logger.info(f"Document re-indexing job enqueued", extra={
+        "doc_id": doc_id,
+        "job_id": job.id
+    })
     
     return doc
 
@@ -174,15 +162,8 @@ async def delete_document(
 ):
     logger.info(f"Deleting document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
-    doc = (
-        db.query(Document)
-        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
-        .first()
-    )
-
-    if not doc:
-        logger.warning(f"Document not found for deletion", extra={"doc_id": doc_id})
-        raise HTTPException(status_code=404, detail="Document not found")
+    # Check ownership - raises 404 if not found or access denied
+    doc = check_document_ownership(db, doc_id, current_user)
     
     # Delete from AI Engine FAISS index
     async with httpx.AsyncClient() as client:

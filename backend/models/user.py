@@ -9,6 +9,7 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    role = Column(String, default="user")  # user | admin
     
     documents = relationship("Document", back_populates="owner")
     chats = relationship("Chat", back_populates="user")
