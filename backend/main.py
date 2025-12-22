@@ -3,6 +3,7 @@ from api import auth
 from api import chat
 from api import documents
 from api import admin
+from api import vectors
 from core.database import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
@@ -56,6 +57,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(admin.router)
+app.include_router(vectors.router)
 
 @app.on_event("startup")
 async def startup_event():
