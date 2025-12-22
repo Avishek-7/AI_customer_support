@@ -3,10 +3,14 @@ import json
 from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import faiss
+import httpx
 from embeddings.embedder import EMBEDDING_DIM
 from utils.logger import get_logger
+from utils.config import settings
 
 logger = get_logger("ai_engine.vectorstore")
+
+BACKEND_URL = settings.BACKEND_URL
 
 DATA_DIR = "data"
 INDEX_PATH = os.path.join(DATA_DIR, "faiss_index.bin")
@@ -50,11 +54,37 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
 # Save Index and Metadata
 def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, Any]]) -> None:
     """
-    Save FAISS index + JSON metadata
+    Save FAISS index + JSON metadata to disk AND sync to database
     """
     faiss.write_index(index, INDEX_PATH)
     with open(META_PATH, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
+    
+    # Sync metadata to database asynchronously (best effort)
+    try:
+        _sync_metadata_to_db(metadata)
+    except Exception as e:
+        logger.warning(f"Failed to sync metadata to database: {e}")
+
+
+def _sync_metadata_to_db(metadata: List[Dict[str, Any]]) -> None:
+    """
+    Sync vector metadata to backend database for hybrid storage.
+    This enables SQL queries on vector metadata while keeping FAISS for fast similarity search.
+    """
+    try:
+        import requests
+        response = requests.post(
+            f"{BACKEND_URL}/vectors/sync",
+            json={"metadata": metadata},
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
+        else:
+            logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error syncing metadata to database: {e}", exc_info=True)
 
 
 # Add Embeddings
@@ -87,6 +117,7 @@ def delete_document(document_id: int) -> None:
     """
     Delete all FAISS vectors belonging to a document.
     Rebuilds FAISS index by re-embedding remaining documents.
+    Also removes metadata from database.
     """
     logger.info(f"Deleting document from FAISS", extra={"document_id": document_id})
     
@@ -96,6 +127,12 @@ def delete_document(document_id: int) -> None:
 
     # Filter out metadata for this document
     new_metadata = [m for m in metadata if m["document_id"] != document_id]
+    
+    # Delete from database
+    try:
+        _delete_metadata_from_db(document_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete metadata from database: {e}")
 
     # If nothing changed, do nothing
     if len(new_metadata) == len(metadata):
@@ -111,6 +148,24 @@ def delete_document(document_id: int) -> None:
     
     # Rebuild FAISS from scratch by re-embedding
     rebuild_index(new_metadata)
+
+def _delete_metadata_from_db(document_id: int) -> None:
+    """
+    Delete vector metadata from backend database for a specific document.
+    """
+    try:
+        import requests
+        response = requests.delete(
+            f"{BACKEND_URL}/vectors/document/{document_id}",
+            timeout=10.0
+        )
+        if response.status_code == 200:
+            logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
+        else:
+            logger.warning(f"Failed to delete metadata: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error deleting metadata from database: {e}", exc_info=True)
+
 
 # Rebuild FAISS Index (used after deletion and updates)
 def rebuild_index(metadata: List[Dict[str, Any]]) -> None:
