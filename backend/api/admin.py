@@ -10,6 +10,7 @@ from models.document import Document
 from models.chat import ChatHistory
 from models.usage import APIUsage
 from pydantic import BaseModel
+from typing import Optional
 from utils.logger import get_logger
 
 logger = get_logger("backend.api.admin")
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # Response Models
 class UserStats(BaseModel):
     id: int
-    name: str
+    name: Optional[str] = None
     email: str
     role: str
     document_count: int
