@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from api import auth
 from api import chat
 from api import documents
+from api import users
 from api import admin
 from api import vectors
 from core.database import Base, engine
@@ -58,6 +59,7 @@ app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(admin.router)
 app.include_router(vectors.router)
+app.include_router(users.router)
 
 @app.on_event("startup")
 async def startup_event():
