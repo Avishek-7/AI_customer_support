@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
-from core.security import hash_password, verify_password, create_access_token
+from core.security import hash_password, verify_password, create_access_token, decode_access_token
 from core.rate_limit import rate_limit
 from models.user import User
-from schemas.user_schema import UserCreate, UserLogin, TokenResponse
+from schemas.user_schema import UserCreate, UserLogin, TokenResponse, ResetPasswordRequest, ForgotPasswordRequest
 from utils.logger import get_logger
 
 logger = get_logger("backend.api.auth")
@@ -64,5 +64,44 @@ def login_user(user_credentials: UserLogin, db: Session = Depends(get_db)):
     logger.info(f"Login successful", extra={"user_id": db_user.id, "email": user_credentials.email})
     return TokenResponse(token=access_token)
 
-    
+# ------ Passoword Reset ----- 
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    logger.info("Password reset attempt", extra={"token": request.token})
 
+    user_id = decode_access_token(request.token)
+    if not user_id:
+        logger.warning("Password reset failed - invalid token", extra={})
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        logger.warning("Password reset failed - user not found", extra={"user_id": user_id})
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = hash_password(request.new_password)
+    db.commit()
+    logger.info("Password reset successful", extra={"user_id": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
+    return TokenResponse(token=access_token)
+
+@router.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    logger.info("Forgot password request", extra={"email": request.email})
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        logger.warning("Forgot password failed - user not found", extra={"email": request.email})
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    reset_token = create_access_token(data={"sub": str(user.id)})
+
+    # Here you would send the reset_token to the user's email.
+    logger.info("Password reset token generated", extra={"user_id": user.id})
+    return {"message": "Password reset instructions sent to your email."}
+    
+@router.get("/reset-password/{token}")
+def verify_reset_token(token: str):
+    user_id = decode_access_token(token)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    return {"message": "Token is valid", "user_id": user_id}
+   
+    
