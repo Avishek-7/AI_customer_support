@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # AI Engine
-    AI_ENGINE_URL: str = "http://localhost:8001"
+    AI_ENGINE_URL: str
 
     class Config:
         env_file = ".env"

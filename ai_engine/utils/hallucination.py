@@ -18,7 +18,10 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
         return {
             "hallucination_score": 0.0,
             "alignment_score": 0.0,
-            "details": "No answer or sources to compare"
+            "details": {
+                "reason": "No answer or sources to compare",
+                "risk_level": "low"
+            }
         }
     
     # Extract source texts
@@ -27,7 +30,10 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
         return {
             "hallucination_score": 0.9,  # High hallucination risk if no sources
             "alignment_score": 0.1,
-            "details": "No source texts available"
+            "details": {
+                "reason": "No source texts available",
+                "risk_level": "high"
+            }
         }
     
     # 1. Embedding-based similarity

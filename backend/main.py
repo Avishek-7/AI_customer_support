@@ -14,10 +14,6 @@ import uuid
 init_logging()
 logger = get_logger("backend.main")
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-logger.info("Database tables created")
-
 app = FastAPI(
     title="AI Customer Support Backend"
 )
@@ -63,7 +59,10 @@ app.include_router(users.router)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Backend server started")
+    # Create database tables asynchronously
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created and backend server started")
 
 @app.on_event("shutdown")
 async def shutdown_event():

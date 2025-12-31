@@ -145,11 +145,15 @@ def delete_document(document_id: int) -> None:
     # Filter out metadata for this document
     new_metadata = [m for m in metadata if m["document_id"] != document_id]
     
-    # Delete from database
+    # Delete from database (async in background)
     try:
-        asyncio.create_task(_delete_metadata_from_db_async(document_id))
+        # Try to get the running event loop and schedule the async deletion
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(_delete_metadata_from_db_async(document_id))
+        # Add a callback to handle any exceptions
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
     except RuntimeError:
-        # No event loop, use sync fallback
+        # No event loop running, use sync fallback
         try:
             import requests
             response = requests.delete(
