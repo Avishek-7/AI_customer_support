@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from typing import List
 from datetime import datetime, timedelta, date
 from core.database import get_db
@@ -50,20 +50,32 @@ class SystemStats(BaseModel):
 
 # Get All Users
 @router.get("/users", response_model=List[UserStats])
-def get_all_users(
-    db: Session = Depends(get_db),
+async def get_all_users(
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View all users with their statistics"""
     logger.info(f"Admin viewing all users", extra={"admin_id": admin_user.id})
     
-    users = db.query(User).all()
+    result = await db.execute(select(User))
+    users = result.scalars().all()
     user_stats = []
     
     for user in users:
-        doc_count = db.query(Document).filter(Document.owner_id == user.id).count()
-        chat_count = db.query(ChatHistory).filter(ChatHistory.user_id == user.id).count()
-        api_calls = db.query(APIUsage).filter(APIUsage.user_id == user.id).count()
+        doc_count_result = await db.execute(
+            select(func.count(Document.id)).filter(Document.owner_id == user.id)
+        )
+        doc_count = doc_count_result.scalar()
+        
+        chat_count_result = await db.execute(
+            select(func.count(ChatHistory.id)).filter(ChatHistory.user_id == user.id)
+        )
+        chat_count = chat_count_result.scalar()
+        
+        api_calls_result = await db.execute(
+            select(func.count(APIUsage.id)).filter(APIUsage.user_id == user.id)
+        )
+        api_calls = api_calls_result.scalar()
         
         user_stats.append(UserStats(
             id=user.id,
@@ -80,23 +92,23 @@ def get_all_users(
 
 # Get API Usage Statistics
 @router.get("/usage-stats", response_model=List[UsageStats])
-def get_usage_statistics(
-    db: Session = Depends(get_db),
+async def get_usage_statistics(
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View API usage statistics by endpoint"""
     logger.info(f"Admin viewing usage stats", extra={"admin_id": admin_user.id})
     
-    stats = (
-        db.query(
+    result = await db.execute(
+        select(
             APIUsage.endpoint,
             func.count(APIUsage.id).label("total_calls"),
             func.sum(APIUsage.tokens).label("total_tokens"),
             func.avg(APIUsage.latency).label("avg_latency")
         )
         .group_by(APIUsage.endpoint)
-        .all()
     )
+    stats = result.all()
     
     return [
         UsageStats(
@@ -111,23 +123,30 @@ def get_usage_statistics(
 
 # Get System Statistics
 @router.get("/system-stats", response_model=SystemStats)
-def get_system_statistics(
-    db: Session = Depends(get_db),
+async def get_system_statistics(
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View overall system statistics"""
     logger.info(f"Admin viewing system stats", extra={"admin_id": admin_user.id})
     
     # Overall counts
-    total_users = db.query(User).count()
-    total_documents = db.query(Document).count()
-    total_chats = db.query(ChatHistory).count()
-    total_api_calls = db.query(APIUsage).count()
+    total_users_result = await db.execute(select(func.count(User.id)))
+    total_users = total_users_result.scalar()
+    
+    total_documents_result = await db.execute(select(func.count(Document.id)))
+    total_documents = total_documents_result.scalar()
+    
+    total_chats_result = await db.execute(select(func.count(ChatHistory.id)))
+    total_chats = total_chats_result.scalar()
+    
+    total_api_calls_result = await db.execute(select(func.count(APIUsage.id)))
+    total_api_calls = total_api_calls_result.scalar()
     
     # Last 24 hours
     yesterday = datetime.utcnow() - timedelta(days=1)
-    users_last_24h = db.query(User).filter(User.id >= 0).count()  # Placeholder - needs created_at field
-    documents_last_24h = db.query(Document).count()  # Placeholder - needs created_at field
+    users_last_24h = 0  # Requires created_at column
+    documents_last_24h = 0  # Requires created_at column
     
     return SystemStats(
         total_users=total_users,
@@ -141,15 +160,21 @@ def get_system_statistics(
 
 # Get User's API Usage
 @router.get("/users/{user_id}/usage")
-def get_user_usage(
+async def get_user_usage(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View specific user's API usage"""
     logger.info(f"Admin viewing user usage", extra={"admin_id": admin_user.id, "target_user_id": user_id})
     
-    usage = db.query(APIUsage).filter(APIUsage.user_id == user_id).order_by(APIUsage.created_at.desc()).limit(100).all()
+    result = await db.execute(
+        select(APIUsage)
+        .filter(APIUsage.user_id == user_id)
+        .order_by(APIUsage.created_at.desc())
+        .limit(100)
+    )
+    usage = result.scalars().all()
     
     return {
         "user_id": user_id,
@@ -168,14 +193,15 @@ def get_user_usage(
 
 # Get All Documents (Admin View)
 @router.get("/documents")
-def get_all_documents(
-    db: Session = Depends(get_db),
+async def get_all_documents(
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View all documents across all users"""
     logger.info(f"Admin viewing all documents", extra={"admin_id": admin_user.id})
     
-    docs = db.query(Document).all()
+    result = await db.execute(select(Document))
+    docs = result.scalars().all()
     
     return {
         "total": len(docs),
@@ -194,14 +220,19 @@ def get_all_documents(
 
 # Get All Chats (Admin View)
 @router.get("/chats")
-def get_all_chats(
-    db: Session = Depends(get_db),
+async def get_all_chats(
+    db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View all chat history across all users"""
     logger.info(f"Admin viewing all chats", extra={"admin_id": admin_user.id})
     
-    chats = db.query(ChatHistory).order_by(ChatHistory.timestamp.desc()).limit(100).all()
+    result = await db.execute(
+        select(ChatHistory)
+        .order_by(ChatHistory.timestamp.desc())
+        .limit(100)
+    )
+    chats = result.scalars().all()
     
     return {
         "total": len(chats),
@@ -219,16 +250,23 @@ def get_all_chats(
 
 # Simplified Stats Endpoint
 @router.get("/stats")
-def admin_stats(
-    db: Session = Depends(get_db),
+async def admin_stats(
+    db: AsyncSession = Depends(get_db),
     admin = Depends(require_admin)
 ):
     """Admin-only: Quick overview of system statistics"""
-    return {
-        "users": db.query(User).count(),
-        "documents": db.query(Document).count(),
-        "chats": db.query(ChatHistory).count(),
-        "usage_today": db.query(APIUsage).filter(
+    users_count = await db.execute(select(func.count(User.id)))
+    docs_count = await db.execute(select(func.count(Document.id)))
+    chats_count = await db.execute(select(func.count(ChatHistory.id)))
+    usage_today_count = await db.execute(
+        select(func.count(APIUsage.id)).filter(
             APIUsage.created_at >= date.today()
-        ).count()
+        )
+    )
+    
+    return {
+        "users": users_count.scalar(),
+        "documents": docs_count.scalar(),
+        "chats": chats_count.scalar(),
+        "usage_today": usage_today_count.scalar()
     }

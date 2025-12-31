@@ -1,10 +1,12 @@
 # === Backend (FastAPI) ===
 fastapi
 uvicorn[standard]
+httpx                    # Async HTTP client
 
 # === Database (PostgreSQL + ORM) ===
 sqlalchemy
-psycopg[binary]          # PostgreSQL driver
+psycopg[binary]          # PostgreSQL driver (sync fallback)
+asyncpg                  # Async PostgreSQL driver
 sqlmodel
 alembic                  # DB migrations
 

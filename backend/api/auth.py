@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from core.database import get_db
 from core.security import hash_password, verify_password, create_access_token, decode_access_token
 from core.rate_limit import rate_limit
@@ -13,14 +14,15 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ------ Register User -----
 @router.post("/register", response_model=TokenResponse)
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
+async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     # Rate limit registration by email to prevent spam (5 attempts per hour per email hash)
     rate_limit(hash(user.email), limit=5, window=3600)
     
     logger.info(f"User registration attempt", extra={"email": user.email})
     
     # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user.email).first()
+    result = await db.execute(select(User).filter(User.email == user.email))
+    existing_user = result.scalar_one_or_none()
     if existing_user:
         logger.warning(f"Registration failed - email exists", extra={"email": user.email})
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -34,8 +36,8 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         password_hash=hashed_pw
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
 
     # Generate JWT token
     access_token = create_access_token(data={"sub": str(new_user.id)})
@@ -45,15 +47,16 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
 # ------ Login User -----
 @router.post("/login", response_model=TokenResponse)
-def login_user(user_credentials: UserLogin, db: Session = Depends(get_db)):
+async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     # Rate limit login attempts to prevent brute force (10 attempts per 5 minutes per email)
     rate_limit(hash(user_credentials.email), limit=10, window=300)
     
     logger.info(f"Login attempt", extra={"email": user_credentials.email})
     
-    db_user = (
-        db.query(User).filter(User.email == user_credentials.email).first()
+    result = await db.execute(
+        select(User).filter(User.email == user_credentials.email)
     )
+    db_user = result.scalar_one_or_none()
 
     if not db_user or not verify_password(user_credentials.password, db_user.password_hash):
         logger.warning(f"Login failed - invalid credentials", extra={"email": user_credentials.email})
@@ -66,27 +69,29 @@ def login_user(user_credentials: UserLogin, db: Session = Depends(get_db)):
 
 # ------ Passoword Reset ----- 
 @router.post("/reset-password", response_model=TokenResponse)
-def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     logger.info("Password reset attempt", extra={"token": request.token})
 
     user_id = decode_access_token(request.token)
     if not user_id:
         logger.warning("Password reset failed - invalid token", extra={})
         raise HTTPException(status_code=400, detail="Invalid or expired token")
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    result = await db.execute(select(User).filter(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
     if not user:
         logger.warning("Password reset failed - user not found", extra={"user_id": user_id})
         raise HTTPException(status_code=404, detail="User not found")
     user.password_hash = hash_password(request.new_password)
-    db.commit()
+    await db.commit()
     logger.info("Password reset successful", extra={"user_id": user.id})
     access_token = create_access_token(data={"sub": str(user.id)})
     return TokenResponse(token=access_token)
 
 @router.post("/forgot-password")
-def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     logger.info("Forgot password request", extra={"email": request.email})
-    user = db.query(User).filter(User.email == request.email).first()
+    result = await db.execute(select(User).filter(User.email == request.email))
+    user = result.scalar_one_or_none()
     if not user:
         logger.warning("Forgot password failed - user not found", extra={"email": request.email})
         raise HTTPException(status_code=404, detail="User not found")
@@ -104,4 +109,3 @@ def verify_reset_token(token: str):
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     return {"message": "Token is valid", "user_id": user_id}
    
-    

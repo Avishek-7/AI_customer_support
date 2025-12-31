@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel
 from typing import List, Optional
 import httpx
@@ -36,7 +37,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     body: ChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -59,14 +60,13 @@ async def chat_with_ai(
     
     # Only filter by document_ids if user explicitly selected specific documents
     if body.document_ids and len(body.document_ids) > 0:
-        user_docs = (
-            db.query(Document)
-            .filter(
+        result = await db.execute(
+            select(Document).filter(
                 Document.owner_id == current_user.id,
                 Document.id.in_(body.document_ids)
             )
-            .all()
         )
+        user_docs = result.scalars().all()
         document_ids = [doc.id for doc in user_docs]
     else:
         # No selection - search ALL documents in FAISS (pass None)
@@ -110,7 +110,7 @@ async def chat_with_ai(
     # Track API usage
     latency = time.time() - start_time
     tokens = len(data["answer"].split())  # Approximate token count
-    track_usage(db, current_user.id, "/chat", tokens, latency)
+    await track_usage(db, current_user.id, "/chat", tokens, latency)
 
     # Return formatted answer to frontend
     return ChatResponse(
@@ -121,7 +121,7 @@ async def chat_with_ai(
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     # Start timer for latency tracking
@@ -137,10 +137,13 @@ async def chat_stream(
     # If no selection, pass None to search ALL indexed documents in FAISS
     if body.document_ids and len(body.document_ids) > 0:
         # Validate that user owns these documents
-        docs = db.query(Document).filter(
-            Document.owner_id == current_user.id,
-            Document.id.in_(body.document_ids)
-        ).all()
+        result = await db.execute(
+            select(Document).filter(
+                Document.owner_id == current_user.id,
+                Document.id.in_(body.document_ids)
+            )
+        )
+        docs = result.scalars().all()
         document_ids = [d.id for d in docs]
         user_selected_docs = True
     else:
@@ -197,32 +200,32 @@ async def chat_stream(
         # Track API usage
         latency = time.time() - start_time
         tokens = len(full_answer_tokens)
-        track_usage(db, current_user.id, "/chat/stream", tokens, latency)
+        await track_usage(db, current_user.id, "/chat/stream", tokens, latency)
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # Save chat after normal or streaming response
-def save_chat_to_db(user_id: int, question: str, answer: str, db: Session):
+async def save_chat_to_db(user_id: int, question: str, answer: str, db):
     history = ChatHistory(
         user_id=user_id,
         message=question,
         response=answer,
     )
     db.add(history)
-    db.commit()
+    await db.commit()
 
 # Get past chats
 @router.get("/history", response_model=ChatHistoryList)
-def get_chat_history(
-    db: Session = Depends(get_db),
+async def get_chat_history(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Fetching chat history", extra={"user_id": current_user.id})
-    chats = (
-        db.query(ChatHistory)
+    result = await db.execute(
+        select(ChatHistory)
         .filter(ChatHistory.user_id == current_user.id)
         .order_by(ChatHistory.id.desc())
-        .all()
     )
+    chats = result.scalars().all()
     logger.info(f"Chat history retrieved", extra={"user_id": current_user.id, "count": len(chats)})
     return ChatHistoryList(history=chats)

@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import faiss
 import httpx
+import asyncio
 from embeddings.embedder import EMBEDDING_DIM
 from utils.logger import get_logger
 from utils.config import settings
@@ -62,27 +63,43 @@ def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, A
     
     # Sync metadata to database asynchronously (best effort)
     try:
-        _sync_metadata_to_db(metadata)
+        # Run async function in event loop
+        asyncio.create_task(_sync_metadata_to_db_async(metadata))
+    except RuntimeError:
+        # No event loop running, use sync fallback
+        try:
+            import requests
+            response = requests.post(
+                f"{BACKEND_URL}/vectors/sync",
+                json={"metadata": metadata},
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
+            else:
+                logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
+        except Exception as e:
+            logger.warning(f"Failed to sync metadata to database: {e}")
     except Exception as e:
         logger.warning(f"Failed to sync metadata to database: {e}")
 
 
-def _sync_metadata_to_db(metadata: List[Dict[str, Any]]) -> None:
+async def _sync_metadata_to_db_async(metadata: List[Dict[str, Any]]) -> None:
     """
     Sync vector metadata to backend database for hybrid storage.
     This enables SQL queries on vector metadata while keeping FAISS for fast similarity search.
     """
     try:
-        import requests
-        response = requests.post(
-            f"{BACKEND_URL}/vectors/sync",
-            json={"metadata": metadata},
-            timeout=10.0
-        )
-        if response.status_code == 200:
-            logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
-        else:
-            logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{BACKEND_URL}/vectors/sync",
+                json={"metadata": metadata},
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
+            else:
+                logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
     except Exception as e:
         logger.error(f"Error syncing metadata to database: {e}", exc_info=True)
 
@@ -130,7 +147,21 @@ def delete_document(document_id: int) -> None:
     
     # Delete from database
     try:
-        _delete_metadata_from_db(document_id)
+        asyncio.create_task(_delete_metadata_from_db_async(document_id))
+    except RuntimeError:
+        # No event loop, use sync fallback
+        try:
+            import requests
+            response = requests.delete(
+                f"{BACKEND_URL}/vectors/document/{document_id}",
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
+            else:
+                logger.warning(f"Failed to delete metadata: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Failed to delete metadata from database: {e}")
     except Exception as e:
         logger.warning(f"Failed to delete metadata from database: {e}")
 
@@ -149,20 +180,20 @@ def delete_document(document_id: int) -> None:
     # Rebuild FAISS from scratch by re-embedding
     rebuild_index(new_metadata)
 
-def _delete_metadata_from_db(document_id: int) -> None:
+async def _delete_metadata_from_db_async(document_id: int) -> None:
     """
     Delete vector metadata from backend database for a specific document.
     """
     try:
-        import requests
-        response = requests.delete(
-            f"{BACKEND_URL}/vectors/document/{document_id}",
-            timeout=10.0
-        )
-        if response.status_code == 200:
-            logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
-        else:
-            logger.warning(f"Failed to delete metadata: {response.status_code}")
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(
+                f"{BACKEND_URL}/vectors/document/{document_id}",
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
+            else:
+                logger.warning(f"Failed to delete metadata: {response.status_code}")
     except Exception as e:
         logger.error(f"Error deleting metadata from database: {e}", exc_info=True)
 

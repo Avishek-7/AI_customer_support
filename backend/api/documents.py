@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import httpx
 import time
 from core.database import get_db
@@ -48,7 +49,7 @@ except Exception as e:
 async def upload_document(
     title: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     # Rate limit uploads (20 uploads per hour per user)
@@ -81,8 +82,8 @@ async def upload_document(
     )
     
     db.add(document_db)
-    db.commit()
-    db.refresh(document_db)
+    await db.commit()
+    await db.refresh(document_db)
     logger.info(f"Document saved to database", extra={"document_id": document_db.id})
 
     # Enqueue indexing job to background queue (or run synchronously if Redis unavailable)
@@ -104,18 +105,21 @@ async def upload_document(
     # Track API usage
     latency = time.time() - start_time
     tokens = len(content.split())  # Approximate token count based on content
-    track_usage(db, current_user.id, "/documents/upload", tokens, latency)
+    await track_usage(db, current_user.id, "/documents/upload", tokens, latency)
 
     return document_db
 
 # ------ Get User Documents -----
 @router.get("/", response_model=DocumentListResponse)
-def get_documents(
-    db: Session = Depends(get_db),
+async def get_documents(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Fetching user documents", extra={"user_id": current_user.id})
-    docs = db.query(Document).filter(Document.owner_id == current_user.id).all()
+    result = await db.execute(
+        select(Document).filter(Document.owner_id == current_user.id)
+    )
+    docs = result.scalars().all()
     logger.info(f"Documents retrieved", extra={
         "user_id": current_user.id, 
         "count": len(docs),
@@ -126,15 +130,15 @@ def get_documents(
 
 # ------ Get single Document -----
 @router.get("/{doc_id}", response_model=DocumentResponse)
-def get_document(
+async def get_document(
     doc_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Fetching document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
     # Check ownership - raises 404 if not found or access denied
-    doc = check_document_ownership(db, doc_id, current_user)
+    doc = await check_document_ownership(db, doc_id, current_user)
     
     logger.info(f"Document retrieved", extra={"doc_id": doc_id})
     return doc
@@ -144,13 +148,13 @@ def get_document(
 async def update_document(
     doc_id: int,
     update_data: DocumentUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Updating document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
     # Check ownership - raises 404 if not found or access denied
-    doc = check_document_ownership(db, doc_id, current_user)
+    doc = await check_document_ownership(db, doc_id, current_user)
     
     if update_data.title:
         doc.title = update_data.title
@@ -158,8 +162,8 @@ async def update_document(
     if update_data.content:
         doc.content = update_data.content
 
-    db.commit()
-    db.refresh(doc)
+    await db.commit()
+    await db.refresh(doc)
     logger.info(f"Document updated in database", extra={"doc_id": doc_id})
 
     # Enqueue re-indexing job to background queue (or run synchronously if Redis unavailable)
@@ -184,13 +188,13 @@ async def update_document(
 @router.delete("/{doc_id}", response_model=DocumentDeleteResponse)
 async def delete_document(
     doc_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Deleting document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
     # Check ownership - raises 404 if not found or access denied
-    doc = check_document_ownership(db, doc_id, current_user)
+    doc = await check_document_ownership(db, doc_id, current_user)
     
     # Delete from AI Engine FAISS index
     async with httpx.AsyncClient() as client:
@@ -204,30 +208,29 @@ async def delete_document(
             logger.error(f"AI engine delete error", extra={"doc_id": doc_id, "error": str(e)})
     
     # Delete from database
-    db.delete(doc)
-    db.commit()
+    await db.delete(doc)
+    await db.commit()
     logger.info(f"Document deleted from database", extra={"doc_id": doc_id})
 
     return DocumentDeleteResponse(detail="Document deleted successfully")
 
 # ------ Search Documents -----
 @router.post("/search", response_model=DocumentSearchResponse)
-def search_documents(
+async def search_documents(
     search_req: DocumentSearchRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.info(f"Searching documents", extra={"user_id": current_user.id, "query": search_req.query})
     query = f"%{search_req.query.lower()}%"
 
-    docs = (
-        db.query(Document)
-        .filter(
+    result = await db.execute(
+        select(Document).filter(
             Document.owner_id == current_user.id,
             Document.content.ilike(query)
         )
-        .all()
     )
+    docs = result.scalars().all()
 
     logger.info(f"Search completed", extra={"user_id": current_user.id, "results_count": len(docs)})
     return DocumentSearchResponse(documents=docs)
@@ -235,9 +238,9 @@ def search_documents(
 
 # ------ Update Document Status from AI Engine -----
 @router.post("/update-status")
-def update_document_status(
+async def update_document_status(
     body: DocumentStatusUpdateRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     logger.info(f"Updating document status", extra={
         "document_id": body.document_id,
@@ -245,7 +248,8 @@ def update_document_status(
         "chunk_count": body.chunk_count
     })
     
-    doc = db.query(Document).filter(Document.id == body.document_id).first()
+    result = await db.execute(select(Document).filter(Document.id == body.document_id))
+    doc = result.scalar_one_or_none()
     if not doc:
         logger.warning(f"Document not found for status update", extra={"document_id": body.document_id})
         raise HTTPException(status_code=404, detail="Document not found")
@@ -255,23 +259,25 @@ def update_document_status(
     if body.chunk_count is not None:
         doc.chunk_count = body.chunk_count
 
-    db.commit()
+    await db.commit()
     logger.info(f"Document status updated", extra={"document_id": body.document_id, "status": body.status})
     return {"detail": "Status updated"}
 
 
 @router.get("/status/{doc_id}")
-def get_document_status(
+async def get_document_status(
     doc_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     logger.debug(f"Getting document status", extra={"doc_id": doc_id})
-    doc = (
-        db.query(Document)
-        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
-        .first()
+    result = await db.execute(
+        select(Document).filter(
+            Document.id == doc_id,
+            Document.owner_id == current_user.id
+        )
     )
+    doc = result.scalar_one_or_none()
     if not doc:
         logger.warning(f"Document not found for status check", extra={"doc_id": doc_id})
         raise HTTPException(status_code=404, detail="Document not found")
@@ -287,7 +293,7 @@ def get_document_status(
 @router.post("/{doc_id}/reindex", response_model=DocumentResponse)
 async def reindex_document(
     doc_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -296,11 +302,13 @@ async def reindex_document(
     """
     logger.info(f"Re-indexing document", extra={"user_id": current_user.id, "doc_id": doc_id})
     
-    doc = (
-        db.query(Document)
-        .filter(Document.id == doc_id, Document.owner_id == current_user.id)
-        .first()
+    result = await db.execute(
+        select(Document).filter(
+            Document.id == doc_id,
+            Document.owner_id == current_user.id
+        )
     )
+    doc = result.scalar_one_or_none()
     
     if not doc:
         logger.warning(f"Document not found for re-index", extra={"doc_id": doc_id})
@@ -308,7 +316,7 @@ async def reindex_document(
     
     # Update status to processing
     doc.index_status = "processing"
-    db.commit()
+    await db.commit()
     
     # Call AI Engine to re-index (update = delete old + re-index)
     async with httpx.AsyncClient() as client:
@@ -326,16 +334,16 @@ async def reindex_document(
             result = resp.json()
             doc.chunk_count = result.get("chunks_indexed", 0)
             doc.index_status = "completed"
-            db.commit()
+            await db.commit()
             logger.info(f"Document re-indexed successfully", extra={
                 "doc_id": doc_id,
                 "chunks": doc.chunk_count
             })
         except Exception as e:
             doc.index_status = "failed"
-            db.commit()
+            await db.commit()
             logger.error(f"AI engine re-index error", extra={"doc_id": doc_id, "error": str(e)})
             raise HTTPException(status_code=500, detail=f"Re-indexing failed: {str(e)}")
     
-    db.refresh(doc)
+    await db.refresh(doc)
     return doc

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete as sql_delete
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from core.database import get_db
@@ -18,9 +19,9 @@ class VectorMetadataSync(BaseModel):
 
 
 @router.post("/sync")
-def sync_vector_metadata(
+async def sync_vector_metadata(
     body: VectorMetadataSync,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Sync vector metadata from FAISS to PostgreSQL database.
@@ -32,7 +33,7 @@ def sync_vector_metadata(
     
     try:
         # Delete all existing metadata (we're doing full sync from FAISS)
-        db.query(VectorMetadata).delete()
+        await db.execute(sql_delete(VectorMetadata))
         
         # Insert new metadata
         synced_count = 0
@@ -40,7 +41,8 @@ def sync_vector_metadata(
             document_id = meta.get("document_id")
             
             # Verify document exists
-            doc = db.query(Document).filter(Document.id == document_id).first()
+            result = await db.execute(select(Document).filter(Document.id == document_id))
+            doc = result.scalar_one_or_none()
             if not doc:
                 logger.warning(f"Document {document_id} not found, skipping vector metadata")
                 continue
@@ -55,7 +57,7 @@ def sync_vector_metadata(
             db.add(vector_meta)
             synced_count += 1
         
-        db.commit()
+        await db.commit()
         
         logger.info(f"Vector metadata synced successfully", extra={
             "total_received": len(body.metadata),
@@ -69,15 +71,15 @@ def sync_vector_metadata(
         }
     
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Failed to sync vector metadata: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to sync metadata: {str(e)}")
 
 
 @router.delete("/document/{document_id}")
-def delete_vector_metadata(
+async def delete_vector_metadata(
     document_id: int,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Delete all vector metadata for a specific document.
@@ -86,11 +88,14 @@ def delete_vector_metadata(
     logger.info(f"Deleting vector metadata", extra={"document_id": document_id})
     
     try:
-        deleted_count = db.query(VectorMetadata).filter(
-            VectorMetadata.document_id == document_id
-        ).delete()
+        result = await db.execute(
+            sql_delete(VectorMetadata).filter(
+                VectorMetadata.document_id == document_id
+            )
+        )
+        deleted_count = result.rowcount
         
-        db.commit()
+        await db.commit()
         
         logger.info(f"Vector metadata deleted", extra={
             "document_id": document_id,
@@ -104,15 +109,15 @@ def delete_vector_metadata(
         }
     
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Failed to delete vector metadata: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to delete metadata: {str(e)}")
 
 
 @router.get("/document/{document_id}")
-def get_vector_metadata(
+async def get_vector_metadata(
     document_id: int,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get all vector metadata for a specific document.
@@ -120,9 +125,12 @@ def get_vector_metadata(
     """
     logger.info(f"Fetching vector metadata", extra={"document_id": document_id})
     
-    metadata = db.query(VectorMetadata).filter(
-        VectorMetadata.document_id == document_id
-    ).order_by(VectorMetadata.chunk_index).all()
+    result = await db.execute(
+        select(VectorMetadata).filter(
+            VectorMetadata.document_id == document_id
+        ).order_by(VectorMetadata.chunk_index)
+    )
+    metadata = result.scalars().all()
     
     return {
         "document_id": document_id,
@@ -142,7 +150,7 @@ def get_vector_metadata(
 
 
 @router.get("/stats")
-def get_vector_stats(db: Session = Depends(get_db)):
+async def get_vector_stats(db: AsyncSession = Depends(get_db)):
     """
     Get statistics about vector storage.
     Shows how many vectors are stored per document.
@@ -152,14 +160,22 @@ def get_vector_stats(db: Session = Depends(get_db)):
     from sqlalchemy import func
     
     # Count vectors per document
-    stats = db.query(
-        VectorMetadata.document_id,
-        func.count(VectorMetadata.id).label("vector_count"),
-        func.sum(VectorMetadata.chunk_length).label("total_chars")
-    ).group_by(VectorMetadata.document_id).all()
+    result = await db.execute(
+        select(
+            VectorMetadata.document_id,
+            func.count(VectorMetadata.id).label("vector_count"),
+            func.sum(VectorMetadata.chunk_length).label("total_chars")
+        ).group_by(VectorMetadata.document_id)
+    )
+    stats = result.all()
     
-    total_vectors = db.query(VectorMetadata).count()
-    total_documents = db.query(VectorMetadata.document_id).distinct().count()
+    total_vectors_result = await db.execute(select(func.count(VectorMetadata.id)))
+    total_vectors = total_vectors_result.scalar()
+    
+    total_documents_result = await db.execute(
+        select(func.count(func.distinct(VectorMetadata.document_id)))
+    )
+    total_documents = total_documents_result.scalar()
     
     return {
         "total_vectors": total_vectors,

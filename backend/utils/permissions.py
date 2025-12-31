@@ -1,20 +1,20 @@
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from models.conversation import Conversation
 from models.document import Document
 from models.chat import ChatHistory
 from models.user import User
 
-def get_conversation(
-        db: Session,
+async def get_conversation(
+        db: AsyncSession,
         convo_id: int,
         user: User
 ) -> Conversation:
-    convo = (
-        db.query(Conversation)
-        .filter(Conversation.id == convo_id)
-        .first()
-    ) 
+    result = await db.execute(
+        select(Conversation).filter(Conversation.id == convo_id)
+    )
+    convo = result.scalar_one_or_none()
 
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -25,17 +25,19 @@ def get_conversation(
     return convo
 
 
-def check_document_ownership(
-        db: Session,
+async def check_document_ownership(
+        db: AsyncSession,
         document_id: int,
         user: User
 ) -> Document:
     """Check if user owns the document"""
-    doc = (
-        db.query(Document)
-        .filter(Document.id == document_id, Document.owner_id == user.id)
-        .first()
+    result = await db.execute(
+        select(Document).filter(
+            Document.id == document_id,
+            Document.owner_id == user.id
+        )
     )
+    doc = result.scalar_one_or_none()
     
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found or access denied")
@@ -43,17 +45,19 @@ def check_document_ownership(
     return doc
 
 
-def check_chat_ownership(
-        db: Session,
+async def check_chat_ownership(
+        db: AsyncSession,
         chat_id: int,
         user: User
 ) -> ChatHistory:
     """Check if user owns the chat"""
-    chat = (
-        db.query(ChatHistory)
-        .filter(ChatHistory.id == chat_id, ChatHistory.user_id == user.id)
-        .first()
+    result = await db.execute(
+        select(ChatHistory).filter(
+            ChatHistory.id == chat_id,
+            ChatHistory.user_id == user.id
+        )
     )
+    chat = result.scalar_one_or_none()
     
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found or access denied")

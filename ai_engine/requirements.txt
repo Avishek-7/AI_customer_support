@@ -3,6 +3,7 @@ fastapi
 uvicorn
 pydantic>=2.0.0
 pydantic-settings
+httpx                    # Async HTTP client
 
 # LLM
 google-generativeai

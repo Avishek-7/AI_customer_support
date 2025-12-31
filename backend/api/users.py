@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import List, Optional
 
 from core.database import get_db
@@ -28,22 +29,24 @@ def ensure_self_or_admin(current_user: User, target_user_id: int):
 # ----------------------------- Endpoints -----------------------------
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: User = Depends(get_current_user)):
     logger.info("Fetching current user profile", extra={"user_id": current_user.id})
     return current_user
 
 
 @router.get("/", response_model=UserListResponse, dependencies=[Depends(require_admin)])
-def list_users(db: Session = Depends(get_db)):
+async def list_users(db: AsyncSession = Depends(get_db)):
     logger.info("Listing users (admin)")
-    users = db.query(User).order_by(User.id.asc()).all()
+    result = await db.execute(select(User).order_by(User.id.asc()))
+    users = result.scalars().all()
     return UserListResponse(users=users)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_user(user_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     ensure_self_or_admin(current_user, user_id)
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     logger.info("Fetched user", extra={"requested_id": user_id, "by_user": current_user.id})
@@ -51,11 +54,12 @@ def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = D
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
-def create_user(body: UserCreateAdmin, db: Session = Depends(get_db)):
+async def create_user(body: UserCreateAdmin, db: AsyncSession = Depends(get_db)):
     logger.info("Admin creating user", extra={"email": body.email})
 
     # Ensure email uniqueness
-    existing = db.query(User).filter(User.email == body.email).first()
+    result = await db.execute(select(User).filter(User.email == body.email))
+    existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -66,22 +70,24 @@ def create_user(body: UserCreateAdmin, db: Session = Depends(get_db)):
         role=body.role if body.role in ("user", "admin") else "user",
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     logger.info("User created by admin", extra={"user_id": new_user.id})
     return new_user
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def update_user(user_id: int, body: UserUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     ensure_self_or_admin(current_user, user_id)
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Email update: ensure uniqueness
     if body.email and body.email != user.email:
-        if db.query(User).filter(User.email == body.email).first():
+        email_check = await db.execute(select(User).filter(User.email == body.email))
+        if email_check.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Email already in use")
         user.email = body.email
 
@@ -99,18 +105,19 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db), c
             raise HTTPException(status_code=400, detail="Invalid role")
         user.role = body.role
 
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     logger.info("User updated", extra={"user_id": user.id, "by_user": current_user.id})
     return user
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)])
-def delete_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
+async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    db.delete(user)
-    db.commit()
+    await db.delete(user)
+    await db.commit()
     logger.info("User deleted", extra={"user_id": user_id})
     return None

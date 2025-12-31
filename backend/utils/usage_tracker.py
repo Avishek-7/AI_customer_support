@@ -1,6 +1,6 @@
 from models.usage import APIUsage
 
-def track_usage(db, user_id, endpoint, tokens, latency):
+async def track_usage(db, user_id, endpoint, tokens, latency):
     db.add(APIUsage(
         user_id=user_id,
         endpoint=endpoint,
@@ -8,4 +8,4 @@ def track_usage(db, user_id, endpoint, tokens, latency):
         latency=latency  
     ))
     
-    db.commit()
+    await db.commit()
