@@ -16,10 +16,12 @@ class ChatHistory(Base):
     __tablename__ = "chat_history"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)  # Link to conversation
     message = Column(Text)
     response = Column(Text)
     timestamp = Column(DateTime, server_default=func.now())
 
     user = relationship("User", back_populates="chat_history")
+    conversation = relationship("Conversation", back_populates="chat_messages")
 
     

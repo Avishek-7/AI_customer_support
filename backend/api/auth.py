@@ -108,4 +108,3 @@ def verify_reset_token(token: str):
     if not user_id:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     return {"message": "Token is valid", "user_id": user_id}
-   

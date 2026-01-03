@@ -14,7 +14,9 @@ from utils.usage_tracker import track_usage
 from models.user import User
 from models.document import Document
 from models.chat import ChatHistory
+from models.conversation import Conversation
 from schemas.chat_schema import ChatHistoryList, ChatHistoryItem
+from schemas.conversation_schema import ConversationCreate, ConversationResponse, ConversationList, ConversationUpdate
 from utils.logger import get_logger
 
 logger = get_logger("backend.api.chat")
@@ -26,6 +28,7 @@ AI_ENGINE_URL = settings.AI_ENGINE_URL
 # Request and Response Models
 class ChatRequest(BaseModel):
     message: str
+    conversation_id: int  # Required: conversations must be created explicitly
     system_prompt: Optional[str] = "You are an AI customer support assistant."
     document_ids: Optional[List[int]] = None
 
@@ -42,18 +45,37 @@ async def chat_with_ai(
 ):
     """
     Main Chat Endpoint.
-    1. Find all documents of the user
-    2. Send query + doc_ids to AI Engine /query
-    3. Return answer + citations
+    Requires an explicit conversation_id.
+    1. Verify conversation exists and belongs to user
+    2. Find all documents of the user
+    3. Send query + doc_ids to AI Engine /query
+    4. Save to conversation
+    5. Return answer + citations
     """
     # Rate limiting check
     rate_limit(current_user.id, limit=100, window=60)
+    
+    # Verify conversation exists and belongs to user
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == body.conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found. Please create a conversation first."
+        )
     
     # Start timer for latency tracking
     start_time = time.time()
     
     logger.info(f"Chat request received", extra={
         "user_id": current_user.id,
+        "conversation_id": body.conversation_id,
         "message_length": len(body.message),
         "document_ids": body.document_ids
     })
@@ -107,6 +129,16 @@ async def chat_with_ai(
     })
     logger.info(f"[BACKEND_RECEIVED] {data['answer'][:500]}..." if len(data["answer"]) > 500 else f"[BACKEND_RECEIVED] {data['answer']}")
 
+    # Save chat to conversation
+    chat_entry = ChatHistory(
+        user_id=current_user.id,
+        conversation_id=body.conversation_id,
+        message=body.message,
+        response=data["answer"]
+    )
+    db.add(chat_entry)
+    await db.commit()
+
     # Track API usage
     latency = time.time() - start_time
     tokens = len(data["answer"].split())  # Approximate token count
@@ -124,11 +156,31 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Streaming chat endpoint.
+    Requires an explicit conversation_id.
+    """
+    # Verify conversation exists and belongs to user
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == body.conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found. Please create a conversation first."
+        )
+    
     # Start timer for latency tracking
     start_time = time.time()
     
     logger.info(f"Stream chat request", extra={
         "user_id": current_user.id,
+        "conversation_id": body.conversation_id,
         "message_length": len(body.message),
         "document_ids": body.document_ids
     })
@@ -197,6 +249,16 @@ async def chat_stream(
         })
         logger.info(f"[BACKEND_STREAM_RECEIVED] {full_answer[:500]}..." if len(full_answer) > 500 else f"[BACKEND_STREAM_RECEIVED] {full_answer}")
         
+        # Save chat to conversation
+        chat_entry = ChatHistory(
+            user_id=current_user.id,
+            conversation_id=body.conversation_id,
+            message=body.message,
+            response=full_answer
+        )
+        db.add(chat_entry)
+        await db.commit()
+        
         # Track API usage
         latency = time.time() - start_time
         tokens = len(full_answer_tokens)
@@ -204,17 +266,8 @@ async def chat_stream(
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-# Save chat after normal or streaming response
-async def save_chat_to_db(user_id: int, question: str, answer: str, db):
-    history = ChatHistory(
-        user_id=user_id,
-        message=question,
-        response=answer,
-    )
-    db.add(history)
-    await db.commit()
 
-# Get past chats
+# Get past chats (legacy - use /conversations/{id}/messages instead)
 @router.get("/history", response_model=ChatHistoryList)
 async def get_chat_history(
     db: AsyncSession = Depends(get_db),
@@ -229,3 +282,192 @@ async def get_chat_history(
     chats = result.scalars().all()
     logger.info(f"Chat history retrieved", extra={"user_id": current_user.id, "count": len(chats)})
     return ChatHistoryList(history=chats)
+
+
+# Conversation Management Endpoints
+
+@router.post("/conversations", response_model=ConversationResponse)
+async def create_conversation(
+    body: ConversationCreate = ConversationCreate(),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Create a new conversation explicitly.
+    Conversations must be created before chat messages can be added to them.
+    """
+    logger.info(f"Creating new conversation", extra={
+        "user_id": current_user.id,
+        "title": body.title
+    })
+    
+    conversation = Conversation(
+        user_id=current_user.id,
+        title=body.title or "New Conversation"
+    )
+    
+    db.add(conversation)
+    await db.commit()
+    await db.refresh(conversation)
+    
+    logger.info(f"Conversation created", extra={
+        "user_id": current_user.id,
+        "conversation_id": conversation.id,
+        "title": conversation.title
+    })
+    
+    return conversation
+
+
+@router.get("/conversations", response_model=ConversationList)
+async def get_conversations(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all conversations for the current user.
+    """
+    logger.info(f"Fetching conversations", extra={"user_id": current_user.id})
+    
+    result = await db.execute(
+        select(Conversation)
+        .filter(Conversation.user_id == current_user.id)
+        .order_by(Conversation.created_at.desc())
+    )
+    conversations = result.scalars().all()
+    
+    logger.info(f"Conversations retrieved", extra={
+        "user_id": current_user.id,
+        "count": len(conversations)
+    })
+    
+    return ConversationList(conversations=conversations)
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def get_conversation(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get a specific conversation by ID.
+    """
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return conversation
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: int,
+    body: ConversationUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update a conversation (e.g., rename title).
+    """
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if body.title is not None:
+        conversation.title = body.title
+    
+    await db.commit()
+    await db.refresh(conversation)
+    
+    logger.info(f"Conversation updated", extra={
+        "user_id": current_user.id,
+        "conversation_id": conversation_id,
+        "new_title": conversation.title
+    })
+    
+    return conversation
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a conversation and all its messages.
+    """
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    await db.delete(conversation)
+    await db.commit()
+    
+    logger.info(f"Conversation deleted", extra={
+        "user_id": current_user.id,
+        "conversation_id": conversation_id
+    })
+    
+    return {"message": "Conversation deleted successfully"}
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=ChatHistoryList)
+async def get_conversation_messages(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all messages in a specific conversation.
+    """
+    # Verify conversation exists and belongs to user
+    result = await db.execute(
+        select(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Get messages
+    result = await db.execute(
+        select(ChatHistory)
+        .filter(ChatHistory.conversation_id == conversation_id)
+        .order_by(ChatHistory.timestamp.asc())
+    )
+    messages = result.scalars().all()
+    
+    logger.info(f"Conversation messages retrieved", extra={
+        "user_id": current_user.id,
+        "conversation_id": conversation_id,
+        "message_count": len(messages)
+    })
+    
+    return ChatHistoryList(history=messages)
+
