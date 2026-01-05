@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
 from typing import List, Optional
 import httpx
+import json
 import time
 from core.database import get_db
 from core.security import get_current_user
@@ -129,14 +130,23 @@ async def chat_with_ai(
     })
     logger.info(f"[BACKEND_RECEIVED] {data['answer'][:500]}..." if len(data["answer"]) > 500 else f"[BACKEND_RECEIVED] {data['answer']}")
 
-    # Save chat to conversation
-    chat_entry = ChatHistory(
+    # Save USER message
+    user_msg = ChatHistory(
         user_id=current_user.id,
         conversation_id=body.conversation_id,
-        message=body.message,
-        response=data["answer"]
+        role="user",
+        content=body.message,
     )
-    db.add(chat_entry)
+    db.add(user_msg)
+
+    # Save ASSISTANT response
+    assistant_msg = ChatHistory(
+        user_id=current_user.id,
+        conversation_id=body.conversation_id,
+        role="assistant",
+        content=data["answer"],
+    )
+    db.add(assistant_msg)
     await db.commit()
 
     # Track API usage
@@ -153,6 +163,7 @@ async def chat_with_ai(
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -209,9 +220,11 @@ async def chat_stream(
         "selected_by_user": user_selected_docs
     })
 
+    # Shared list to collect answer tokens
+    full_answer_tokens = []
+
     # SSE generator
     async def event_generator():
-        full_answer_tokens = []
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",
@@ -229,7 +242,6 @@ async def chat_stream(
                         # Track tokens for logging
                         if chunk.startswith("data: "):
                             try:
-                                import json
                                 data = json.loads(chunk[6:])
                                 if data.get("type") == "token":
                                     full_answer_tokens.append(data.get("content", ""))
@@ -248,15 +260,30 @@ async def chat_stream(
             "token_count": len(full_answer_tokens)
         })
         logger.info(f"[BACKEND_STREAM_RECEIVED] {full_answer[:500]}..." if len(full_answer) > 500 else f"[BACKEND_STREAM_RECEIVED] {full_answer}")
+    
+    response = StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    async def background_save():
+        """Save chat history after streaming completes"""
+        full_answer = "".join(full_answer_tokens)
         
-        # Save chat to conversation
-        chat_entry = ChatHistory(
+        # Save user message
+        user_msg = ChatHistory(
             user_id=current_user.id,
             conversation_id=body.conversation_id,
-            message=body.message,
-            response=full_answer
+            role="user",
+            content=body.message
         )
-        db.add(chat_entry)
+        db.add(user_msg)
+        
+        # Save assistant response
+        assistant_msg = ChatHistory(
+            user_id=current_user.id,
+            conversation_id=body.conversation_id,
+            role="assistant",
+            content=full_answer
+        )
+        db.add(assistant_msg)
         await db.commit()
         
         # Track API usage
@@ -264,7 +291,8 @@ async def chat_stream(
         tokens = len(full_answer_tokens)
         await track_usage(db, current_user.id, "/chat/stream", tokens, latency)
     
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    background_tasks.add_task(background_save)
+    return response
 
 
 # Get past chats (legacy - use /conversations/{id}/messages instead)
