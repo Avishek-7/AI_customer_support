@@ -1,7 +1,14 @@
 import requests
+from .worker import celery_app
 from core.config import settings
 
-def index_document_task(document_id: int, title: str, content: str):
+@celery_app.task(
+        bind=True,
+        autoretry_for=(Exception,),
+        retry_kwargs={"max_retries": 3, "countdown": 15}
+)
+
+def index_document_task(self, document_id: int, title: str, content: str):
     """Background task to index a document via AI engine API"""
     try:
         response = requests.post(

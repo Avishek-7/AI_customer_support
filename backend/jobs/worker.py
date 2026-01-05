@@ -1,7 +1,18 @@
-from redis import Redis
-from rq import Queue, Worker
+from celery import Celery
+from dotenv import load_dotenv
+import os
 
-redis_conn = Redis(host="localhost", port=6379)
+load_dotenv()
+celery_app = Celery(
+    "worker",
+    broker=os.getenv("CELERY_BROKER_URL"),
+    backend=os.getenv("CELERY_RESULT_BACKEND")
+)
 
-if __name__ == "__main__":
-    Worker([Queue("default")], connection=redis_conn).work()
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+)
