@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 class Settings(BaseSettings):
     app_name: str = "AI Customer Support Backend"
@@ -12,6 +13,10 @@ class Settings(BaseSettings):
 
     # AI Engine
     AI_ENGINE_URL: str
+
+    # Celery
+    celery_broker_url: Optional[str] = None
+    celery_result_backend: Optional[str] = None
 
     class Config:
         env_file = ".env"
