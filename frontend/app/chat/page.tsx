@@ -22,9 +22,10 @@ export default function ChatPage() {
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [conversationId, setConversationId] = useState<number | null>(null);
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
   // Get token - only available on client side
   const getToken = () => {
@@ -40,7 +41,7 @@ export default function ChatPage() {
     const res = await fetch(`${API_BASE}/documents/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    
+
     // If unauthorized, clear token and redirect to login
     if (res.status === 401) {
       chatLogger.warn("Token expired or invalid, redirecting to login");
@@ -48,7 +49,7 @@ export default function ChatPage() {
       window.location.href = "/login";
       return;
     }
-    
+
     const data = await res.json();
     chatLogger.info("Documents loaded", { count: data.documents?.length || 0 });
     setDocs(data.documents ?? []);
@@ -58,7 +59,7 @@ export default function ChatPage() {
   const handleDeleteSelected = async () => {
     const token = getToken();
     if (!token || selectedDocIds.length === 0) return;
-    
+
     if (!confirm(`Delete ${selectedDocIds.length} document(s)? This cannot be undone.`)) return;
 
     chatLogger.info("Deleting documents", { documentIds: selectedDocIds });
@@ -89,13 +90,13 @@ export default function ChatPage() {
       window.location.href = "/login";
       return;
     }
-    
+
     // Inline fetch to avoid linter warning about calling setState in effect
     const loadDocs = async () => {
       const res = await fetch(`${API_BASE}/documents/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       // If unauthorized, clear token and redirect to login
       if (res.status === 401) {
         chatLogger.warn("Token expired or invalid, redirecting to login");
@@ -103,7 +104,7 @@ export default function ChatPage() {
         window.location.href = "/login";
         return;
       }
-      
+
       const data = await res.json();
       chatLogger.info("Documents loaded on mount", { count: data.documents?.length || 0 });
       setDocs(data.documents ?? []);
@@ -118,15 +119,15 @@ export default function ChatPage() {
 
   function upsertAssistantChunk(chunk: string) {
     setMessages((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        if (last && last.role === "assistant") {
-            // APPEND chunk to existing content, don't overwrite
-            last.content += chunk;
-        } else {
-            copy.push({ role: "assistant", content: chunk });
-        }
-        return copy;
+      const copy = [...prev];
+      const last = copy[copy.length - 1];
+      if (last && last.role === "assistant") {
+        // APPEND chunk to existing content, don't overwrite
+        last.content += chunk;
+      } else {
+        copy.push({ role: "assistant", content: chunk });
+      }
+      return copy;
     });
   }
 
@@ -134,7 +135,7 @@ export default function ChatPage() {
     const token = getToken();
     if (!userMessage.trim() || !token) return;
 
-    chatLogger.info("Sending chat message", { 
+    chatLogger.info("Sending chat message", {
       messageLength: userMessage.length,
       selectedDocIds: selectedDocIds.length > 0 ? selectedDocIds : "all"
     });
@@ -144,26 +145,55 @@ export default function ChatPage() {
 
     setIsStreaming(true);
 
+    // Create a conversation if one doesn't exist yet
+    let currentConversationId = conversationId;
+    if (!currentConversationId) {
+      try {
+        const convRes = await fetch(`${API_BASE}/chat/conversations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ title: userMessage.slice(0, 50) + (userMessage.length > 50 ? "..." : "") }),
+        });
+        if (!convRes.ok) {
+          const err = await convRes.json().catch(() => ({ detail: "Failed to create conversation" }));
+          chatLogger.error("Failed to create conversation", { error: err.detail });
+          setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.detail}` }]);
+          setIsStreaming(false);
+          return;
+        }
+        const convData = await convRes.json();
+        currentConversationId = convData.id;
+        setConversationId(convData.id);
+        chatLogger.info("Created new conversation", { conversationId: convData.id });
+      } catch (e) {
+        chatLogger.error("Failed to create conversation", { error: String(e) });
+        setMessages(prev => [...prev, { role: "assistant", content: "Error: Failed to create conversation" }]);
+        setIsStreaming(false);
+        return;
+      }
+    }
+
     // Streaming Response
     const response = await fetch(`${API_BASE}/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({
         message: userMessage,
+        conversation_id: currentConversationId,
         document_ids: selectedDocIds.length ? selectedDocIds : undefined,
       }),
     });
 
     if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "Server error" }));
-        chatLogger.error("Chat request failed", { status: response.status, error: err.detail });
-        setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.detail || "unknown error"}` }]);
-        setIsStreaming(false);
-        return;
+      const err = await response.json().catch(() => ({ detail: "Server error" }));
+      chatLogger.error("Chat request failed", { status: response.status, error: err.detail });
+      setMessages(prev => [...prev, { role: "assistant", content: `Error: ${err.detail || "unknown error"}` }]);
+      setIsStreaming(false);
+      return;
     }
 
     chatLogger.debug("Stream connection established");
-    
+
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     // Track full answer for logging
@@ -184,62 +214,62 @@ export default function ChatPage() {
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        
+
         try {
-            // Parse SSE format - lines starting with "data: "
-            if (!line.startsWith("data: ")) continue;
-            
-            const jsonStr = line.slice(6); // Remove "data: " prefix
-            const event = JSON.parse(jsonStr);
-            
-            if (event.type === "token") {
-                tokenCount++;
-                const content = event.content;
-                
-                // Client-side duplicate detection - skip if this exact content was recently added
-                // Check if this chunk would create visible repetition
-                if (content && content.length > 10 && fullAnswer.length > 100) {
-                    const lastPart = fullAnswer.slice(-150).toLowerCase();
-                    const newPart = content.toLowerCase();
-                    if (lastPart.includes(newPart) && newPart.trim().length > 5) {
-                        chatLogger.debug("Skipping duplicate token on frontend", { token: content.slice(0, 30) });
-                        continue;
-                    }
-                }
-                
-                // Track token for answer logging
-                fullAnswer += content;
-                // AI engine sends content, not token
-                upsertAssistantChunk(content);
-            }       
-            else if (event.type === "sources") {
-                // attach sources to the last assistant message
-                finalSources = event.sources ?? [];
-                chatLogger.debug("Sources received", { count: finalSources.length });
-                setMessages((prev) => {
-                    const copy = [...prev];
-                    const last = copy[copy.length - 1];
-                    if (last && last.role === "assistant") {
-                        last.sources = finalSources
-                    }
-                    return copy;
-                });
+          // Parse SSE format - lines starting with "data: "
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6); // Remove "data: " prefix
+          const event = JSON.parse(jsonStr);
+
+          if (event.type === "token") {
+            tokenCount++;
+            const content = event.content;
+
+            // Client-side duplicate detection - skip if this exact content was recently added
+            // Check if this chunk would create visible repetition
+            if (content && content.length > 10 && fullAnswer.length > 100) {
+              const lastPart = fullAnswer.slice(-150).toLowerCase();
+              const newPart = content.toLowerCase();
+              if (lastPart.includes(newPart) && newPart.trim().length > 5) {
+                chatLogger.debug("Skipping duplicate token on frontend", { token: content.slice(0, 30) });
+                continue;
+              }
             }
-            else if (event.type === "end") {
-                // Stream has ended
-                chatLogger.debug("Stream ended event received");
-            }
-            else if (event.type === "error") {
-                chatLogger.error("Stream error event", { message: event.message });
-                setMessages((p) => [...p, { role: "assistant", content: `Error: ${event.message}` }]);
-            }
+
+            // Track token for answer logging
+            fullAnswer += content;
+            // AI engine sends content, not token
+            upsertAssistantChunk(content);
+          }
+          else if (event.type === "sources") {
+            // attach sources to the last assistant message
+            finalSources = event.sources ?? [];
+            chatLogger.debug("Sources received", { count: finalSources.length });
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last && last.role === "assistant") {
+                last.sources = finalSources
+              }
+              return copy;
+            });
+          }
+          else if (event.type === "end") {
+            // Stream has ended
+            chatLogger.debug("Stream ended event received");
+          }
+          else if (event.type === "error") {
+            chatLogger.error("Stream error event", { message: event.message });
+            setMessages((p) => [...p, { role: "assistant", content: `Error: ${event.message}` }]);
+          }
         } catch (e) {
           chatLogger.error("Failed to parse stream event", { error: String(e), line });
           console.error("Failed to parse stream event:", e, "Raw line:", line);
         }
       }
     }
-    
+
     // Log the complete answer received from backend for comparison
     chatLogger.logAnswer("FRONTEND_RECEIVED_ANSWER", fullAnswer, {
       query: userMessage,
@@ -247,7 +277,7 @@ export default function ChatPage() {
       sourcesCount: finalSources.length,
       documentIds: selectedDocIds.length > 0 ? selectedDocIds : "all"
     });
-  
+
     setIsStreaming(false);
   }
 

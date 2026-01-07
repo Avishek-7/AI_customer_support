@@ -16,7 +16,7 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -165,13 +165,12 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
 
         {/* File drop zone */}
         <div
-          className={`mb-4 border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-            dragActive
+          className={`mb-4 border-2 border-dashed rounded-lg p-6 text-center transition-colors ${dragActive
               ? "border-blue-500 bg-blue-500/10"
               : file
-              ? "border-green-500 bg-green-500/10"
-              : "border-gray-600 hover:border-gray-500"
-          }`}
+                ? "border-green-500 bg-green-500/10"
+                : "border-gray-600 hover:border-gray-500"
+            }`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
           onDragOver={handleDrag}

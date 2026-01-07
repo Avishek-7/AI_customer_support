@@ -69,9 +69,13 @@ async def upload_document(
         logger.warning(f"Invalid file type", extra={"file_name": file.filename})
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
-    # Extract text from PDF
+    # Extract text from PDF (run in thread to avoid blocking)
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
     pdf_bytes = await file.read()
-    content = extract_text_from_pdf(pdf_bytes)
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as executor:
+        content = await loop.run_in_executor(executor, extract_text_from_pdf, pdf_bytes)
     logger.info(f"PDF text extracted", extra={"content_length": len(content)})
 
     # Store document in DB

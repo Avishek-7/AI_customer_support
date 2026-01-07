@@ -1,7 +1,21 @@
-export async function streamChat(message: string, token: string, cb:(chunk:string)=>void) {
+export async function streamChat(
+    message: string,
+    conversationId: number,
+    token: string,
+    cb: (chunk: string) => void,
+    documentIds?: number[]
+) {
     const response = await fetch("/chat/stream", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${token}` }
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            message,
+            conversation_id: conversationId,
+            document_ids: documentIds,
+        }),
     });
 
     const reader = response.body?.getReader();
