@@ -87,20 +87,25 @@ async def upload_document(
     logger.info(f"Document saved to database", extra={"document_id": document_db.id})
 
     # Enqueue indexing job to background queue (or run synchronously if Redis unavailable)
-    if QUEUE_AVAILABLE and queue:
-        job = queue.enqueue(index_document_task, document_db.id, document_db.title, document_db.content)
-        logger.info(f"Document indexing job enqueued", extra={
-            "document_id": document_db.id,
-            "job_id": job.id
-        })
-    else:
-        # Run synchronously if Redis is not available
-        logger.warning(f"Running document indexing synchronously (Redis unavailable)", extra={"document_id": document_db.id})
-        try:
-            index_document_task(document_db.id, document_db.title, document_db.content)
-            logger.info(f"Document indexed synchronously", extra={"document_id": document_db.id})
-        except Exception as e:
-            logger.error(f"Synchronous indexing failed: {e}", extra={"document_id": document_db.id})
+    # if QUEUE_AVAILABLE and queue:
+    #     job = queue.enqueue(index_document_task, document_db.id, document_db.title, document_db.content)
+    #     logger.info(f"Document indexing job enqueued", extra={
+    #         "document_id": document_db.id,
+    #         "job_id": job.id
+    #     })
+    # else:
+    #     # Run synchronously if Redis is not available
+    #     logger.warning(f"Running document indexing synchronously (Redis unavailable)", extra={"document_id": document_db.id})
+    #     try:
+    #         index_document_task(document_db.id, document_db.title, document_db.content)
+    #         logger.info(f"Document indexed synchronously", extra={"document_id": document_db.id})
+    #     except Exception as e:
+    #         logger.error(f"Synchronous indexing failed: {e}", extra={"document_id": document_db.id})
+    index_document_task.delay(document_db.id)
+    logger.info(
+        "Document indexing task enqueued",
+        extra={"document_id": document_db.id}
+    )
 
     # Track API usage
     latency = time.time() - start_time
@@ -167,20 +172,25 @@ async def update_document(
     logger.info(f"Document updated in database", extra={"doc_id": doc_id})
 
     # Enqueue re-indexing job to background queue (or run synchronously if Redis unavailable)
-    if QUEUE_AVAILABLE and queue:
-        job = queue.enqueue(index_document_task, doc.id, doc.title, doc.content)
-        logger.info(f"Document re-indexing job enqueued", extra={
-            "doc_id": doc_id,
-            "job_id": job.id
-        })
-    else:
-        # Run synchronously if Redis is not available
-        logger.warning(f"Running document re-indexing synchronously (Redis unavailable)", extra={"doc_id": doc_id})
-        try:
-            index_document_task(doc.id, doc.title, doc.content)
-            logger.info(f"Document re-indexed synchronously", extra={"doc_id": doc_id})
-        except Exception as e:
-            logger.error(f"Synchronous re-indexing failed: {e}", extra={"doc_id": doc_id})
+    # if QUEUE_AVAILABLE and queue:
+    #     job = queue.enqueue(index_document_task, doc.id, doc.title, doc.content)
+    #     logger.info(f"Document re-indexing job enqueued", extra={
+    #         "doc_id": doc_id,
+    #         "job_id": job.id
+    #     })
+    # else:
+    #     # Run synchronously if Redis is not available
+    #     logger.warning(f"Running document re-indexing synchronously (Redis unavailable)", extra={"doc_id": doc_id})
+    #     try:
+    #         index_document_task(doc.id, doc.title, doc.content)
+    #         logger.info(f"Document re-indexed synchronously", extra={"doc_id": doc_id})
+    #     except Exception as e:
+    #         logger.error(f"Synchronous re-indexing failed: {e}", extra={"doc_id": doc_id})
+    index_document_task.delay(doc.id)
+    logger.info(
+        "Document re-indexing task enqueued",
+        extra={"doc_id": doc.id}
+    )
     
     return doc
 
