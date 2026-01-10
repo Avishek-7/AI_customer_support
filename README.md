@@ -28,7 +28,7 @@
 
 </div>
 
-> 💡 **Note:** Add your screenshots to `docs/screenshots/` folder
+> 
 
 ---
 
