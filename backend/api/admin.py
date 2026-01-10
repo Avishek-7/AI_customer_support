@@ -1,14 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from typing import List
 from datetime import datetime, timedelta, date
+import httpx
 from core.database import get_db
 from core.roles import require_admin
+from core.config import settings
 from models.user import User
 from models.document import Document
 from models.chat import ChatHistory
 from models.usage import APIUsage
+from models.conversation import Conversation
 from pydantic import BaseModel
 from typing import Optional
 from utils.logger import get_logger
@@ -16,6 +19,8 @@ from utils.logger import get_logger
 logger = get_logger("backend.api.admin")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+AI_ENGINE_URL = settings.AI_ENGINE_URL
 
 
 # Response Models
@@ -269,4 +274,124 @@ async def admin_stats(
         "documents": docs_count.scalar(),
         "chats": chats_count.scalar(),
         "usage_today": usage_today_count.scalar()
+    }
+
+@router.get("/debug/conversations/{conversation_id}")
+async def debug_conversation(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin)
+):
+    """
+    Admin-only: Debug a conversation with full RAG pipeline details.
+    
+    Returns:
+    - All messages in the conversation
+    - For the last user query: retrieved chunks, prompt length, document IDs,
+      confidence score, and hallucination score
+    """
+    logger.info(f"Admin debugging conversation", extra={
+        "admin_id": admin_user.id, 
+        "conversation_id": conversation_id
+    })
+    
+    # Get conversation
+    conv_result = await db.execute(
+        select(Conversation).filter(Conversation.id == conversation_id)
+    )
+    conversation = conv_result.scalar_one_or_none()
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    # Get all messages
+    result = await db.execute(
+        select(ChatHistory)
+        .filter(ChatHistory.conversation_id == conversation_id)
+        .order_by(ChatHistory.created_at.asc())
+    )
+    chats = result.scalars().all()
+    
+    messages = [
+        {
+            "id": chat.id,
+            "user_id": chat.user_id,
+            "role": chat.role,
+            "content": chat.content,
+            "created_at": chat.created_at
+        }
+        for chat in chats
+    ]
+    
+    # Find last user message to replay for debug info
+    last_user_msg = None
+    last_assistant_msg = None
+    for chat in reversed(chats):
+        if chat.role == "user" and last_user_msg is None:
+            last_user_msg = chat
+        if chat.role == "assistant" and last_assistant_msg is None:
+            last_assistant_msg = chat
+        if last_user_msg and last_assistant_msg:
+            break
+    
+    debug_info = None
+    if last_user_msg:
+        # Call AI engine debug endpoint to get retrieval details
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get retrieved chunks
+                search_response = await client.get(
+                    f"{AI_ENGINE_URL}/debug/search-preview",
+                    params={"query": last_user_msg.content, "k": 5},
+                    timeout=30.0
+                )
+                search_data = search_response.json() if search_response.status_code == 200 else {}
+                
+                # Get confidence and hallucination scores
+                if last_assistant_msg and search_data.get("chunks"):
+                    critique_response = await client.post(
+                        f"{AI_ENGINE_URL}/critique",
+                        json={
+                            "question": last_user_msg.content,
+                            "answer": last_assistant_msg.content,
+                            "sources": search_data.get("chunks", [])
+                        },
+                        timeout=30.0
+                    )
+                    critique_data = critique_response.json() if critique_response.status_code == 200 else {}
+                else:
+                    critique_data = {}
+                
+                # Build prompt to estimate length
+                chunks_text = "\n\n".join([
+                    c.get("text_preview", "") for c in search_data.get("chunks", [])
+                ])
+                estimated_prompt = f"System: You are an AI assistant.\n\nContext:\n{chunks_text}\n\nQuestion: {last_user_msg.content}"
+                
+                debug_info = {
+                    "last_query": last_user_msg.content,
+                    "retrieved_chunks": search_data.get("chunks", []),
+                    "total_chunks_retrieved": search_data.get("results_count", 0),
+                    "document_ids": list(set(
+                        c.get("document_id") for c in search_data.get("chunks", []) 
+                        if c.get("document_id")
+                    )),
+                    "prompt_length_chars": len(estimated_prompt),
+                    "prompt_length_words": len(estimated_prompt.split()),
+                    "confidence_score": critique_data.get("critique", {}).get("llm_critique", {}).get("overall_score"),
+                    "hallucination_score": critique_data.get("critique", {}).get("hallucination_detection", {}).get("hallucination_score"),
+                    "alignment_score": critique_data.get("critique", {}).get("hallucination_detection", {}).get("alignment_score"),
+                    "critique_details": critique_data.get("critique", {})
+                }
+        except Exception as e:
+            logger.error(f"Failed to get debug info from AI engine", extra={"error": str(e)})
+            debug_info = {"error": str(e)}
+    
+    return {
+        "conversation_id": conversation_id,
+        "user_id": conversation.user_id,
+        "title": conversation.title,
+        "message_count": len(messages),
+        "messages": messages,
+        "debug_info": debug_info
     }

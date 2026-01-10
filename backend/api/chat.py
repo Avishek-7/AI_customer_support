@@ -19,6 +19,7 @@ from models.conversation import Conversation
 from schemas.chat_schema import ChatHistoryList, ChatHistoryItem
 from schemas.conversation_schema import ConversationCreate, ConversationResponse, ConversationList, ConversationUpdate
 from utils.logger import get_logger
+from utils.chat_persistence import save_chat_turn
 
 logger = get_logger("backend.api.chat")
 
@@ -130,24 +131,18 @@ async def chat_with_ai(
     })
     logger.info(f"[BACKEND_RECEIVED] {data['answer'][:500]}..." if len(data["answer"]) > 500 else f"[BACKEND_RECEIVED] {data['answer']}")
 
-    # Save USER message
-    user_msg = ChatHistory(
-        user_id=current_user.id,
-        conversation_id=body.conversation_id,
-        role="user",
-        content=body.message,
+    await save_chat_turn(
+        db,
+        current_user.id,
+        body.conversation_id,
+        body.message,
+        data["answer"]
     )
-    db.add(user_msg)
 
-    # Save ASSISTANT response
-    assistant_msg = ChatHistory(
-        user_id=current_user.id,
-        conversation_id=body.conversation_id,
-        role="assistant",
-        content=data["answer"],
-    )
-    db.add(assistant_msg)
-    await db.commit()
+    # Update conversation title on first message
+    if conversation.title == "New Conversation":
+        conversation.title = body.message[:40] + "..."
+        await db.commit()
 
     # Track API usage
     latency = time.time() - start_time
@@ -265,26 +260,23 @@ async def chat_stream(
 
     async def background_save():
         """Save chat history after streaming completes"""
-        full_answer = "".join(full_answer_tokens)
+        if not full_answer_tokens:
+            full_answer = ""
+        else:
+            full_answer = "".join(full_answer_tokens)
         
-        # Save user message
-        user_msg = ChatHistory(
-            user_id=current_user.id,
-            conversation_id=body.conversation_id,
-            role="user",
-            content=body.message
+        await save_chat_turn(
+            db,
+            current_user.id,
+            body.conversation_id,
+            body.message,
+            full_answer
         )
-        db.add(user_msg)
-        
-        # Save assistant response
-        assistant_msg = ChatHistory(
-            user_id=current_user.id,
-            conversation_id=body.conversation_id,
-            role="assistant",
-            content=full_answer
-        )
-        db.add(assistant_msg)
-        await db.commit()
+
+        # Update conversation title on first message
+        if conversation.title == "New Conversation":
+            conversation.title = body.message[:40] + "..."
+            await db.commit()
         
         # Track API usage
         latency = time.time() - start_time
