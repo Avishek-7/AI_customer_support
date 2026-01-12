@@ -1,9 +1,32 @@
-.env*
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Logs
 *.log
-# Embedding/LLM caches (if used)
-data/
+logs/
+
+# FAISS index and metadata (large binary files, regenerated)
+data/faiss_index.bin
+data/metadata.json
+
+# Model cache (downloaded models)
 cache/
 models/
+
+# Sentence transformers cache
+.cache/
+
+# Misc
+.DS_Store

@@ -1,7 +1,31 @@
-.env*
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Logs
 *.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+sql_app.db
+
+# Alembic
 alembic.ini
 migrations/
+
+# Misc
+.DS_Store
