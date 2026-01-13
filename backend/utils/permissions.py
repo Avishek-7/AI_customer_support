@@ -5,6 +5,7 @@ from models.conversation import Conversation
 from models.document import Document
 from models.chat import ChatHistory
 from models.user import User
+from core.error_handler import ErrorHandler
 
 async def get_conversation(
         db: AsyncSession,
@@ -17,10 +18,10 @@ async def get_conversation(
     convo = result.scalar_one_or_none()
 
     if not convo:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise ErrorHandler.not_found("Conversation not found")
     
     if convo.user_id != user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise ErrorHandler.forbidden("You do not have permission to access this conversation")
     
     return convo
 
@@ -40,7 +41,7 @@ async def check_document_ownership(
     doc = result.scalar_one_or_none()
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found or access denied")
+        raise ErrorHandler.not_found("Document not found or you do not have access to it")
     
     return doc
 
@@ -60,6 +61,6 @@ async def check_chat_ownership(
     chat = result.scalar_one_or_none()
     
     if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found or access denied")
+        raise ErrorHandler.not_found("Chat not found or you do not have access to it")
     
     return chat

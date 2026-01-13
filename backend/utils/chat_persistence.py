@@ -1,7 +1,10 @@
 from typing import Tuple, Optional
 from models.chat import ChatHistory
+from models.conversation import Conversation
 from utils.logger import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from datetime import datetime
 
 logger = get_logger("backend.utils.chat_persistence")
 
@@ -15,6 +18,11 @@ async def save_chat_turn(
 ) -> tuple[ChatHistory, ChatHistory] | None:
     """
     Save a complete chat turn (user message + assistant response) to the database.
+    
+    This function ensures:
+    - Atomic transaction handling (both messages saved together or none)
+    - Rollback protection (all DB changes rolled back on failure)
+    - Conversation title updated on first message (only once)
     
     Args:
         db: Async database session
@@ -39,28 +47,48 @@ async def save_chat_turn(
         return None
     
     try:
+        # Verify conversation exists and belongs to user
+        result = await db.execute(
+            select(Conversation).filter(
+                Conversation.id == conversation_id,
+                Conversation.user_id == user_id
+            )
+        )
+        conversation = result.scalar_one_or_none()
+        
+        if not conversation:
+            raise ValueError(f"Conversation {conversation_id} not found or access denied for user {user_id}")
+        
         user_chat = ChatHistory(
             user_id=user_id,
             conversation_id=conversation_id,
             role="user",
             content=user_message,
+            created_at=datetime.utcnow()
         )
         assistant_chat = ChatHistory(
             user_id=user_id,
             conversation_id=conversation_id,
             role="assistant",
             content=assistant_response,
+            created_at=datetime.utcnow()
         )
         
         db.add(user_chat)
         db.add(assistant_chat)
+        
+        # Update conversation title on first message (only once - don't override user edits)
+        if conversation.title == "New Conversation":
+            conversation.title = user_message[:40] + ("..." if len(user_message) > 40 else "")
+            conversation.updated_at = datetime.utcnow()
+        
         await db.commit()
         
         # Refresh to get generated IDs
         await db.refresh(user_chat)
         await db.refresh(assistant_chat)
         
-        logger.info("Chat turn saved", extra={
+        logger.info("Chat turn saved successfully", extra={
             "user_id": user_id,
             "conversation_id": conversation_id,
             "user_chat_id": user_chat.id,
@@ -73,9 +101,10 @@ async def save_chat_turn(
         
     except Exception as e:
         await db.rollback()
-        logger.error("Failed to save chat turn", extra={
+        logger.error("Failed to save chat turn (rolled back)", extra={
             "user_id": user_id,
             "conversation_id": conversation_id,
             "error": str(e),
+            "error_type": type(e).__name__,
         })
         raise

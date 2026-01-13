@@ -2,6 +2,7 @@ import time
 from redis import Redis
 from fastapi import HTTPException
 from utils.logger import get_logger
+from core.error_handler import ErrorHandler
 
 logger = get_logger("backend.core.rate_limit")
 
@@ -34,7 +35,7 @@ def rate_limit(user_id: int, limit=100, window=60):
             redis.expire(key, window)
         if count > limit:
             logger.warning(f"Rate limit exceeded", extra={"user_id": user_id, "count": count, "limit": limit})
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            raise ErrorHandler.rate_limited("You have exceeded the rate limit. Please try again later.")
     except HTTPException:
         # Re-raise HTTP exceptions (actual rate limit violations)
         raise
@@ -42,4 +43,3 @@ def rate_limit(user_id: int, limit=100, window=60):
         # Log error but don't block the request
         logger.error(f"Rate limit check failed: {e}", extra={"user_id": user_id})
         # Graceful degradation - allow request to proceed
-    

@@ -10,6 +10,9 @@ class ConversationResponse(BaseModel):
     user_id: int
     title: str
     created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+    last_message_preview: Optional[str] = None
 
     class Config:
         from_attributes = True
