@@ -61,26 +61,76 @@ A full-stack AI-powered customer support application with a Next.js frontend, a 
 - **Document selection** - Choose which documents to query (or use all)
 - **Bulk delete** - Select and delete multiple documents at once
 - **Auto-indexing** - Documents are automatically chunked, embedded, and indexed
+- **Document search** - Full-text search within uploaded documents
+- **Document edit** - Update document title and content
+- **Reindex functionality** - Regenerate embeddings for documents
 
 </details>
 
 <details>
-<summary><b>🔐 Authentication</b> (click to expand)</summary>
+<summary><b>🔐 Authentication & User Management</b> (click to expand)</summary>
 
 - **JWT-based auth** - Secure token authentication
 - **User registration & login** - Full auth flow with password hashing
 - **Protected routes** - Chat and documents require authentication
+- **Password recovery** - Forgot password flow with email verification
+- **Password reset** - Reset password with secure token verification
+- **User profile** - View and edit user information
+- **Profile management** - Update name, email, and password
+- **Role-based access** - Admin and user roles with different permissions
 
 </details>
 
 <details>
-<summary><b>🎨 Modern UI</b> (click to expand)</summary>
+<summary><b>💬 Conversation Management</b> (click to expand)</summary>
+
+- **Multiple conversations** - Create and manage multiple chat conversations
+- **Conversation history** - View all past conversations with timestamps
+- **Rename conversations** - Update conversation titles
+- **Delete conversations** - Remove conversations with confirmation
+- **Load conversation** - Retrieve full conversation history
+- **Message persistence** - All messages saved with conversation context
+
+</details>
+
+<details>
+<summary><b>🎨 Modern UI & UX</b> (click to expand)</summary>
 
 - **Dark theme** - Sleek dark mode interface
 - **Responsive design** - Works on desktop and mobile
 - **Real-time typing indicator** - "AI is thinking..." with animated dots
 - **Markdown support** - AI responses render with proper formatting
 - **Syntax highlighting** - Code blocks with language-specific highlighting
+- **Global navigation** - Easy access to profile, documents, and admin panel
+- **Sidebar navigation** - Quick access to conversations and documents
+- **Loading states** - Visual feedback during data loading
+
+</details>
+
+<details>
+<summary><b>🛡️ Admin Dashboard</b> (click to expand)</summary>
+
+- **Admin statistics** - KPI cards showing users, documents, chats, API calls
+- **User management** - Create, view, and delete users
+- **User analytics** - Per-user statistics and activity tracking
+- **Analytics dashboard** - System-wide usage statistics and trends
+- **Document monitoring** - View all documents across users with status
+- **Chat activity** - Monitor recent chat activities
+- **Conversation debugger** - Debug conversations with RAG pipeline details
+- **Role assignment** - Assign admin/user roles to accounts
+
+</details>
+
+<details>
+<summary><b>🔍 Debugging & Monitoring</b> (click to expand)</summary>
+
+- **Conversation debugging** - Deep inspection of RAG pipeline
+- **Chunk retrieval tracking** - See which chunks were retrieved for each query
+- **Confidence scores** - View AI confidence metrics for answers
+- **Hallucination detection** - See hallucination risk scores
+- **Alignment scoring** - Track source-answer alignment metrics
+- **Prompt inspection** - View prompt length and content metrics
+- **Query tracking** - Monitor all user queries and responses
 
 </details>
 
@@ -443,7 +493,22 @@ npm install
 
 # Run the dev server
 npm run dev
+
+# Build for production
+npm run build
+npm start
 ```
+
+**Frontend Features:**
+- ✅ User authentication (login, register, password recovery)
+- ✅ Chat interface with conversation management
+- ✅ Document upload and management
+- ✅ User profile management
+- ✅ Admin dashboard with statistics
+- ✅ User management interface
+- ✅ Analytics and monitoring
+- ✅ Conversation debugging tools
+- ✅ Real-time streaming responses
 
 ### 5. Access the App
 - Frontend: http://localhost:3000

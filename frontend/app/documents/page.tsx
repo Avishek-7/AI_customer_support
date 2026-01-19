@@ -1,13 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Navigation from "@/components/Navigation";
 import { docsLogger } from "@/lib/logger";
+import {
+  updateDocument,
+  searchDocuments,
+  reindexDocument,
+  getDocumentStatus,
+} from "@/lib/api";
 
 type Document = {
   id: number;
   title: string;
   content: string;
   owner_id: number;
+  index_status?: string;
+  chunk_count?: number;
 };
 
 export default function DocumentsPage() {
@@ -19,6 +28,13 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [chunkCount, setChunkCount] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Document[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [reindexing, setReindexing] = useState<number | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -125,10 +141,7 @@ export default function DocumentsPage() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/documents/status/${docId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const status = await res.json();
+        const status = await getDocumentStatus(docId, token);
 
         docsLogger.debug("Index status update", { docId, status: status.status, chunkCount: status.chunk_count });
 
@@ -155,17 +168,113 @@ export default function DocumentsPage() {
         console.error("Polling error:", err);
       }
     }, 2000); // Poll every 2 seconds
-  }
+  };
+
+  // Handle document search
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const token = getToken();
+    if (!token) return;
+
+    setSearching(true);
+    docsLogger.info("Searching documents", { query: searchQuery });
+
+    try {
+      const data = await searchDocuments(searchQuery, token);
+      setSearchResults(data.documents ?? []);
+      docsLogger.info("Search completed", { count: data.documents?.length || 0 });
+    } catch (err) {
+      docsLogger.error("Search failed", { error: String(err) });
+      setError("Search failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Handle edit document
+  const handleEditStart = (doc: Document) => {
+    setEditingId(doc.id);
+    setEditTitle(doc.title);
+    setEditContent(doc.content);
+  };
+
+  const handleEditSave = async (docId: number) => {
+    const token = getToken();
+    if (!token) return;
+
+    docsLogger.info("Updating document", { docId, title: editTitle });
+
+    try {
+      const updated = await updateDocument(docId, token, {
+        title: editTitle,
+        content: editContent,
+      });
+      
+      // Update in docs list
+      setDocs((prev) =>
+        prev.map((doc) =>
+          doc.id === docId ? { ...doc, ...updated } : doc
+        )
+      );
+      
+      setEditingId(null);
+      docsLogger.info("Document updated successfully", { docId });
+    } catch (err) {
+      docsLogger.error("Failed to update document", { error: String(err) });
+      setError("Failed to update document");
+    }
+  };
+
+  // Handle reindex
+  const handleReindex = async (docId: number) => {
+    const token = getToken();
+    if (!token) return;
+
+    if (!confirm("Re-index this document? This may take a moment.")) return;
+
+    setReindexing(docId);
+    docsLogger.info("Reindexing document", { docId });
+
+    try {
+      await reindexDocument(docId, token);
+      docsLogger.info("Reindex completed", { docId });
+      await fetchDocs();
+    } catch (err) {
+      docsLogger.error("Failed to reindex document", { error: String(err) });
+      setError("Failed to reindex document");
+    } finally {
+      setReindexing(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6 space-y-6">
-      <h1 className="text-2xl font-bold mb-2">Documents</h1>
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col">
+      <Navigation />
+      <div className="flex-1 p-6 space-y-6">
+        <h1 className="text-3xl font-bold">Documents</h1>
+
+      {error && (
+        <div className="bg-red-900 text-red-200 p-4 rounded-lg">
+          {error}
+          <button
+            onClick={() => setError(null)}
+            className="ml-4 text-sm underline hover:no-underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Upload card */}
-      <div className="bg-gray-800 p-4 rounded-lg space-y-3 max-w-xl">
-        <h2 className="font-semibold text-lg">Upload PDF</h2>
+      <div className="bg-gray-800 p-6 rounded-lg space-y-4 max-w-2xl">
+        <h2 className="font-semibold text-lg">Upload PDF Document</h2>
         <input
-          className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700"
+          className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400"
           placeholder="Document title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -174,7 +283,7 @@ export default function DocumentsPage() {
           type="file"
           accept="application/pdf"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="text-sm"
+          className="text-sm text-gray-300"
         />
         {uploading && (
           <p className="text-sm text-yellow-400">Uploading & indexing…</p>
@@ -185,19 +294,50 @@ export default function DocumentsPage() {
             {chunkCount !== null && ` (${chunkCount} chunks)`}
           </p>
         )}
-        {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           onClick={handleUpload}
           disabled={uploading || !file || !title.trim()}
-          className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-semibold"
         >
           Upload
         </button>
       </div>
 
+      {/* Search card */}
+      <div className="bg-gray-800 p-6 rounded-lg space-y-4 max-w-2xl">
+        <h2 className="font-semibold text-lg">Search Documents</h2>
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search document content..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1 px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400"
+          />
+          <button
+            type="submit"
+            disabled={searching}
+            className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 font-semibold"
+          >
+            {searching ? "Searching..." : "Search"}
+          </button>
+        </form>
+        {searchResults.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-gray-400">{searchResults.length} result(s) found</p>
+            {searchResults.map((doc) => (
+              <div key={doc.id} className="p-3 bg-gray-700 rounded text-sm">
+                <p className="font-semibold">{doc.title}</p>
+                <p className="text-gray-300 line-clamp-2">{doc.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Documents list */}
-      <div className="bg-gray-800 p-4 rounded-lg">
-        <h2 className="font-semibold text-lg mb-3">Your Documents</h2>
+      <div className="bg-gray-800 p-6 rounded-lg">
+        <h2 className="font-semibold text-lg mb-4">Your Documents</h2>
         {loading ? (
           <p>Loading…</p>
         ) : docs.length === 0 ? (
@@ -205,20 +345,93 @@ export default function DocumentsPage() {
             No documents yet. Upload a PDF to get started.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <div className="space-y-3">
             {docs.map((doc) => (
-              <li
-                key={doc.id}
-                className="flex items-center justify-between border border-gray-700 rounded px-3 py-2"
-              >
-                <div>
-                  <p className="font-medium">{doc.title}</p>
-                  <p className="text-xs text-gray-400">ID: {doc.id}</p>
-                </div>
-              </li>
+              <div key={doc.id} className="border border-gray-700 rounded-lg p-4 space-y-3">
+                {editingId === doc.id ? (
+                  // Edit mode
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white"
+                      placeholder="Document title"
+                    />
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white h-24"
+                      placeholder="Document content"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEditSave(doc.id)}
+                        className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-sm font-semibold"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="px-3 py-1 rounded bg-gray-600 hover:bg-gray-500 text-sm font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // View mode
+                  <div>
+                    <p className="font-semibold text-lg">{doc.title}</p>
+                    <p className="text-xs text-gray-400 mt-1">ID: {doc.id}</p>
+                    {doc.index_status && (
+                      <p className="text-xs text-blue-400 mt-1">
+                        Status: {doc.index_status} ({doc.chunk_count} chunks)
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-300 mt-2 line-clamp-2">{doc.content}</p>
+                    
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      <button
+                        onClick={() => handleEditStart(doc)}
+                        className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-sm font-semibold"
+                      >
+                        ✎ Edit
+                      </button>
+                      <button
+                        onClick={() => handleReindex(doc.id)}
+                        disabled={reindexing === doc.id}
+                        className="px-3 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-sm font-semibold"
+                      >
+                        {reindexing === doc.id ? "Reindexing..." : "↻ Reindex"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const token = getToken();
+                          if (token && confirm("Delete this document?")) {
+                            try {
+                              await fetch(`${API_BASE}/documents/${doc.id}`, {
+                                method: "DELETE",
+                                headers: { Authorization: `Bearer ${token}` },
+                              });
+                              await fetchDocs();
+                            } catch (err) {
+                              setError("Failed to delete document");
+                            }
+                          }
+                        }}
+                        className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 text-sm font-semibold"
+                      >
+                        🗑 Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
-          </ul>
+          </div>
         )}
+      </div>
       </div>
     </div>
   );

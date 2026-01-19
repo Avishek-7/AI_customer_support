@@ -4,9 +4,6 @@ from core.config import settings
 from core.database import get_sync_db
 # Import all models to ensure SQLAlchemy mapper relationships are initialized
 from models.document import Document
-from models.user import User
-from models.chat import Chat, ChatHistory
-from models.conversation import Conversation
 
 
 @celery_app.task(

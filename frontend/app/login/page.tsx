@@ -50,6 +50,12 @@ export default function LoginPage() {
           className="w-full bg-blue-600 hover:bg-blue-700 rounded py-2">
           Login
         </button>
+
+        <div className="text-center text-sm">
+          <a href="/forgot-password" className="text-blue-400 hover:text-blue-300">
+            Forgot password?
+          </a>
+        </div>
       </div>
     </div>
   )
