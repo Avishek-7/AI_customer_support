@@ -14,12 +14,12 @@ class Settings(BaseSettings):
     # AI Engine
     AI_ENGINE_URL: str
 
-    # Celery
-    celery_broker_url: Optional[str] = None
-    celery_result_backend: Optional[str] = None
+    # Redis (for rate limiting)
+    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # Ignore extra env vars like old celery settings
 
 settings = Settings()
 

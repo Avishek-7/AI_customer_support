@@ -35,5 +35,6 @@ langchain-text-splitters
 python-dotenv
 requests
 pymupdf                   # PDF handling
+redis                     # Rate limiting
 
 google-generativeai

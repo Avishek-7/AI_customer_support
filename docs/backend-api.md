@@ -515,7 +515,7 @@ Upload and index a PDF document.
 **Side Effects:**
 - Extracts text from PDF
 - Creates document record
-- Enqueues background indexing task (Celery)
+- Enqueues background indexing task
 - Tracks API usage
 
 **Error Responses:**

@@ -9,7 +9,6 @@
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
-[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)](https://rabbitmq.com)
 [![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Architecture](#️-architecture) • [API Reference](#-api-endpoints) • [Contributing](#-contributing)
@@ -157,20 +156,14 @@ A full-stack AI-powered customer support application with a Next.js frontend, a 
 └─────────────┘     └─────────────┘     └─────────────┘
                            │
                            │
-           ┌───────────────┼───────────────┐
-           │               │               │
-           ▼               ▼               ▼
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │ PostgreSQL  │ │  RabbitMQ   │ │    Redis    │
-    │  Database   │ │   Broker    │ │    Cache    │
-    │  Port 5432  │ │  Port 5672  │ │  Port 6379  │
-    └─────────────┘ └─────────────┘ └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │   Celery    │
-                    │   Worker    │
-                    └─────────────┘
+           ┌───────────────┴───────────────┐
+           │                               │
+           ▼                               ▼
+    ┌─────────────┐                 ┌─────────────┐
+    │ PostgreSQL  │                 │    Redis    │
+    │  Database   │                 │    Cache    │
+    │  Port 5432  │                 │  Port 6379  │
+    └─────────────┘                 └─────────────┘
 ```
 
 ### 💬 Chat Request Flow
@@ -213,8 +206,8 @@ A full-stack AI-powered customer support application with a Next.js frontend, a 
 └─────────────────────────────────────────────────────────────────────────┘
 
   ┌─────────┐      ┌─────────────┐      ┌─────────────┐      ┌──────────┐
-  │  User   │      │   Backend   │      │   Celery    │      │AI Engine │
-  │ Upload  │─────▶│  Save Meta  │─────▶│   Worker    │─────▶│  Index   │
+  │  User   │      │   Backend   │      │ Background  │      │AI Engine │
+  │ Upload  │─────▶│  Save Meta  │─────▶│    Task     │─────▶│  Index   │
   │  PDF    │      │  to DB      │      │  (Async)    │      │ Document │
   └─────────┘      └─────────────┘      └─────────────┘      └──────────┘
                                                                    │
@@ -413,7 +406,7 @@ ai-customer-support/
 ├── backend/           # FastAPI service (Python)
 │   ├── api/           # Route handlers (auth, chat, documents)
 │   ├── core/          # Config, database, security
-│   ├── jobs/          # Celery worker and background tasks
+│   ├── jobs/          # Background tasks (FastAPI BackgroundTasks)
 │   ├── models/        # SQLAlchemy models
 │   └── schemas/       # Pydantic schemas
 └── ai_engine/         # RAG pipeline (Python)
@@ -431,8 +424,7 @@ ai-customer-support/
 - Python 3.10+
 - Node.js 18+
 - PostgreSQL
-- RabbitMQ (for Celery message broker)
-- Redis (for caching and rate limiting)
+- Redis (optional, for rate limiting)
 - Google API Key (for Gemini)
 
 ### 1. Database Setup
@@ -458,15 +450,11 @@ cat > .env << EOF
 JWT_SECRET_KEY=your-super-secret-key-change-this
 DATABASE_URL=postgresql+asyncpg://ai_user:your_password@localhost:5432/ai_support
 AI_ENGINE_URL=http://localhost:9000
-celery_broker_url=amqp://guest:guest@localhost:5672//
-celery_result_backend=rpc://
+REDIS_URL=redis://localhost:6379/0
 EOF
 
 # Run the server
 uvicorn main:app --reload --port 8000
-
-# In a separate terminal, run the Celery worker
-celery -A jobs.worker worker --loglevel=info
 ```
 
 ### 3. AI Engine Setup
@@ -525,8 +513,7 @@ npm start
 | `AI_ENGINE_URL` | AI engine service URL | ✅ (default: `http://localhost:9000`) |
 | `JWT_ALGORITHM` | JWT algorithm | ❌ (default: `HS256`) |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry | ❌ (default: `1440`) |
-| `celery_broker_url` | RabbitMQ connection URL | ❌ |
-| `celery_result_backend` | Celery result backend | ❌ |
+| `REDIS_URL` | Redis connection URL (for rate limiting) | ❌ (default: `redis://localhost:6379/0`) |
 
 ### AI Engine `.env`
 | Variable | Description | Required |
@@ -575,8 +562,6 @@ npm start
 - **bcrypt** - Password hashing
 - **python-jose** - JWT handling
 - **httpx** - Async HTTP client
-- **Celery** - Distributed task queue
-- **RabbitMQ** - Message broker for Celery
 - **Redis** - Caching and rate limiting
 
 ### AI Engine
@@ -592,7 +577,6 @@ npm start
 
 - **PostgreSQL** - Users, documents, chat history, conversations
 - **Redis** - Session caching, rate limiting counters
-- **RabbitMQ** - Task queue messages for Celery workers
 - **FAISS Index** - Vector embeddings stored in `ai_engine/data/`
   - `faiss_index.bin` - Vector index
   - `metadata.json` - Chunk metadata (text, document_id, title)
@@ -623,11 +607,11 @@ npm start
 | ✅ | RAG-based document querying |
 | ✅ | Streaming chat responses |
 | ✅ | JWT authentication |
-| ✅ | Celery background tasks |
+| ✅ | Background tasks |
 | ✅ | Conversation management |
+| ✅ | Docker Compose setup |
 | 🚧 | Multi-language support |
 | 🚧 | Admin dashboard |
-| 📋 | Docker Compose setup |
 | 📋 | Kubernetes deployment |
 | 📋 | OAuth (Google, GitHub) |
 | 📋 | File type support (DOCX, TXT) |

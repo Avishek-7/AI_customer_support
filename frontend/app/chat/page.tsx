@@ -6,6 +6,7 @@ import ChatInput from "./../../components/ChatInput";
 import UploadModal from "./../../components/UploadModal";
 import ConversationList from "./../../components/ConversationList";
 import Navigation from "./../../components/Navigation";
+import ResizableSidebar from "./../../components/ResizableSidebar";
 import { chatLogger } from "@/lib/logger";
 import {
   streamChatMessage,
@@ -41,6 +42,7 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
+  const [activeTab, setActiveTab] = useState<"conversations" | "documents">("conversations");
 
   const chatRef = useRef<HTMLDivElement>(null);
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -284,55 +286,83 @@ export default function ChatPage() {
     <div className="flex flex-col h-screen bg-gray-900 text-white">
       <Navigation />
       <div className="flex flex-1 overflow-hidden">
-        {/* Conversations Sidebar */}
-        <div className="w-64 border-r border-gray-700 bg-gray-800 flex flex-col">
-          <ConversationList
-            conversations={conversations}
-            activeId={conversationId}
-            onSelect={loadConversation}
-            onRename={handleRenameConversation}
-            onDelete={handleDeleteConversation}
-            onCreateNew={handleCreateConversation}
-            loading={loadingConversations}
-          />
-        </div>
-
-        {/* Documents Sidebar */}
-        <aside className="w-64 border-r border-gray-800 p-4 flex flex-col gap-3 bg-gray-950">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold text-sm">Documents</h2>
+        {/* Combined Sidebar */}
+        <ResizableSidebar defaultWidth={300} minWidth={250} maxWidth={450}>
+          {/* Tab Navigation */}
+          <div className="flex gap-2 mb-4 border-b border-gray-700">
             <button
-              onClick={() => setShowUploadModal(true)}
-              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+              onClick={() => setActiveTab("conversations")}
+              className={`pb-2 px-2 text-sm font-medium transition-colors ${
+                activeTab === "conversations"
+                  ? "border-b-2 border-blue-500 text-blue-400"
+                  : "text-gray-400 hover:text-gray-300"
+              }`}
             >
-              + Upload
+              Conversations
+            </button>
+            <button
+              onClick={() => setActiveTab("documents")}
+              className={`pb-2 px-2 text-sm font-medium transition-colors ${
+                activeTab === "documents"
+                  ? "border-b-2 border-blue-500 text-blue-400"
+                  : "text-gray-400 hover:text-gray-300"
+              }`}
+            >
+              Documents
             </button>
           </div>
-          {docs.length === 0 ? (
-            <p className="text-xs text-gray-400">No documents uploaded yet.</p>
-          ) : (
-            <div className="space-y-2 text-sm overflow-y-auto flex-1">
-              {docs.map((doc) => (
-                <label key={doc.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-800 p-2 rounded">
-                  <input
-                    type="checkbox"
-                    className="accent-blue-500"
-                    checked={selectedDocIds.includes(doc.id)}
-                    onChange={(e) => {
-                      setSelectedDocIds((prev) =>
-                        e.target.checked ? [...prev, doc.id] : prev.filter((id) => id !== doc.id)
-                      );
-                    }}
-                  />
-                  <span className="truncate text-xs">{doc.title}</span>
-                </label>
-              ))}
-            </div>
-          )}
-          <p className="mt-auto text-[11px] text-gray-500">
-            {selectedDocIds.length > 0 ? `Using ${selectedDocIds.length} doc(s)` : "Using all docs"}
-          </p>
-        </aside>
+
+          {/* Tab Content */}
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {activeTab === "conversations" ? (
+              <ConversationList
+                conversations={conversations}
+                activeId={conversationId}
+                onSelect={loadConversation}
+                onRename={handleRenameConversation}
+                onDelete={handleDeleteConversation}
+                onCreateNew={handleCreateConversation}
+                loading={loadingConversations}
+              />
+            ) : (
+              <div className="flex flex-col gap-3 h-full">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">Files</h3>
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                  >
+                    + Upload
+                  </button>
+                </div>
+                {docs.length === 0 ? (
+                  <p className="text-xs text-gray-400">No documents uploaded yet.</p>
+                ) : (
+                  <div className="space-y-2 text-sm overflow-y-auto flex-1">
+                    {docs.map((doc) => (
+                      <label key={doc.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-800 p-2 rounded">
+                        <input
+                          type="checkbox"
+                          className="accent-blue-500"
+                          checked={selectedDocIds.includes(doc.id)}
+                          onChange={(e) => {
+                            setSelectedDocIds((prev) =>
+                              e.target.checked ? [...prev, doc.id] : prev.filter((id) => id !== doc.id)
+                            );
+                          }}
+                        />
+                        <span className="truncate text-xs">{doc.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-auto text-[11px] text-gray-500">
+                  {selectedDocIds.length > 0 ? `Using ${selectedDocIds.length} doc(s)` : "Using all docs"}
+                </p>
+              </div>
+            )}
+          </div>
+        </ResizableSidebar>
 
         {/* Main Chat Area */}
         <div className="flex flex-col flex-1">

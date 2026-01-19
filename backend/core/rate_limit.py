@@ -3,12 +3,13 @@ from redis import Redis
 from fastapi import HTTPException
 from utils.logger import get_logger
 from core.error_handler import ErrorHandler
+from core.config import settings
 
 logger = get_logger("backend.core.rate_limit")
 
 # Initialize Redis with connection pool
 try:
-    redis = Redis(host="localhost", port=6379, decode_responses=True, socket_connect_timeout=1)
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
     # Test connection
     redis.ping()
     REDIS_AVAILABLE = True

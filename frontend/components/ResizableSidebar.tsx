@@ -2,24 +2,55 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function ResizableSidebar({ children }: { children: React.ReactNode }) {
-  const [width, setWidth] = useState<number>(260);
+interface ResizableSidebarProps {
+  children: React.ReactNode;
+  defaultWidth?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  side?: "left" | "right";
+}
+
+export default function ResizableSidebar({
+  children,
+  defaultWidth = 260,
+  minWidth = 200,
+  maxWidth = 520,
+  side = "left",
+}: ResizableSidebarProps) {
+  const [width, setWidth] = useState<number>(defaultWidth);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const dragging = useRef(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   function onMouseDown() {
     dragging.current = true;
     document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
   }
 
   function onMouseUp() {
     dragging.current = false;
     document.body.style.userSelect = "";
+    document.body.style.cursor = "auto";
   }
 
   function onMouseMove(e: MouseEvent) {
     if (!dragging.current) return;
-    const newWidth = Math.max(200, Math.min(520, e.clientX));
+
+    if (!sidebarRef.current) return;
+
+    const rect = sidebarRef.current.getBoundingClientRect();
+    let newWidth: number;
+
+    if (side === "left") {
+      newWidth = e.clientX - rect.left;
+    } else {
+      newWidth = rect.right - e.clientX;
+    }
+
+    newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
     setWidth(newWidth);
   }
 
@@ -35,14 +66,36 @@ export default function ResizableSidebar({ children }: { children: React.ReactNo
   }, []);
 
   return (
-    <aside style={{ width }} className="bg-gray-900 border-r border-gray-800 p-4 flex flex-col">
-      {children}
+    <div
+      ref={sidebarRef}
+      style={{
+        width: isCollapsed ? "50px" : `${width}px`,
+        transition: "width 0.3s ease-in-out",
+      }}
+      className="bg-gray-900 border-r border-gray-800 flex flex-col relative overflow-hidden"
+    >
+      {/* Toggle Button */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute top-4 right-2 z-50 p-1 hover:bg-gray-700 rounded transition-colors"
+        title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        {isCollapsed ? (
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        ) : (
+          <ChevronLeft className="w-5 h-5 text-gray-400" />
+        )}
+      </button>
+
+      {/* Content */}
+      {!isCollapsed && <div className="p-4 flex flex-col flex-1 overflow-hidden">{children}</div>}
+
+      {/* Resize Handle */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize"
+        className={`${side === "left" ? "right-0" : "left-0"} absolute top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 hover:opacity-50 transition-opacity`}
         onMouseDown={onMouseDown}
-        style={{ transform: "translateX(0)" }}
       />
-    </aside>
+    </div>
   );
 }
 

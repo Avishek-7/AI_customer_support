@@ -17,7 +17,7 @@ class ChatSessionResponse(BaseModel):
     messages: List[ChatMessage]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # class ChatSessionRequest(BaseModel):
 #     message: str
@@ -31,7 +31,7 @@ class ChatHistoryItem(BaseModel):
     timestamp: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class ChatHistoryList(BaseModel):
     history: List[ChatHistoryItem]
