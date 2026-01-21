@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     # Redis (for rate limiting)
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
+    # Frontend URL (for password reset links)
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # Email / SMTP settings
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 1025
+    SMTP_USER: Optional[str] = None
+    SMTP_PASS: Optional[str] = None
+    SMTP_FROM: str = "MeetingIntel <no-reply@local.test>"
+
     class Config:
         env_file = ".env"
         extra = "ignore"  # Ignore extra env vars like old celery settings

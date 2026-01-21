@@ -8,6 +8,7 @@ from core.error_handler import ErrorHandler
 from models.user import User
 from schemas.user_schema import UserCreate, UserLogin, TokenResponse, ResetPasswordRequest, ForgotPasswordRequest
 from utils.logger import get_logger
+from utils.email import send_reset_email
 import time
 
 logger = get_logger("backend.api.auth")
@@ -127,9 +128,17 @@ async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Dep
         return {"message": "If the email exists, a reset link has been sent"}
     
     reset_token = create_access_token(data={"sub": str(user.id)})
+    
+    # Send password reset email
+    email_sent = send_reset_email(to=user.email, reset_token=reset_token)
+    
     latency = time.time() - start_time
-    logger.info("Reset token generated", extra={"user_id": user.id, "email": user.email, "latency": f"{latency:.3f}s"})
-    return {"message": "Password reset link sent to your email", "reset_token": reset_token}
+    if email_sent:
+        logger.info("Password reset email sent", extra={"user_id": user.id, "email": user.email, "latency": f"{latency:.3f}s"})
+    else:
+        logger.warning("Failed to send password reset email", extra={"user_id": user.id, "email": user.email})
+    
+    return {"message": "If the email exists, a reset link has been sent"}
     
 @router.get("/reset-password/{token}")
 def verify_reset_token(token: str):

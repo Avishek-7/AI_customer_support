@@ -16,25 +16,12 @@ bcrypt
 python-multipart         # For file uploads
 
 # === Environment Variables ===
-pydantic
+pydantic[email]
 pydantic-settings
-
-# === AI / RAG Engine ===
-sentence-transformers
-faiss-cpu                # Vector database
-numpy                    # Required for FAISS
-scikit-learn             # Optional but used for preprocessing
-
-# === Optional LLM Integration ===
-langchain
-langchain-core
-langchain-community
-langchain-text-splitters
 
 # === Utility ===
 python-dotenv
 requests
 pymupdf                   # PDF handling
 redis                     # Rate limiting
-
-google-generativeai
+numpy                     # Required for some utilities

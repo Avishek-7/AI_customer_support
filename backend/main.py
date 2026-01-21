@@ -64,6 +64,11 @@ app.include_router(admin.router)
 app.include_router(vectors.router)
 app.include_router(users.router)
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker/Kubernetes."""
+    return {"status": "healthy"}
+
 @app.on_event("startup")
 async def startup_event():
     # Create database tables asynchronously
