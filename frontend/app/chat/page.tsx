@@ -98,13 +98,32 @@ export default function ChatPage() {
     async (convId: number) => {
       const token = getToken();
       if (!token) return;
+      
+      chatLogger.info("Loading conversation", { conversationId: convId });
+      
       try {
         const data = await getConversationMessages(convId, token);
-        setMessages(data.history ?? []);
-        setConversationId(convId);
-        chatLogger.info("Conversation loaded", { conversationId: convId, messageCount: data.history?.length });
+        chatLogger.info("Conversation data received", { conversationId: convId, data });
+        
+        if (data.history) {
+          setMessages(data.history);
+          setConversationId(convId);
+          chatLogger.info("Conversation loaded successfully", { 
+            conversationId: convId, 
+            messageCount: data.history.length 
+          });
+        } else {
+          chatLogger.warn("No history in response", { conversationId: convId, data });
+          setMessages([]);
+          setConversationId(convId);
+        }
       } catch (err) {
-        chatLogger.error("Failed to load conversation", { error: String(err) });
+        chatLogger.error("Failed to load conversation", { 
+          conversationId: convId,
+          error: String(err),
+          errorDetails: err 
+        });
+        alert(`Failed to load conversation: ${err}`);
       }
     },
     []

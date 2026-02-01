@@ -26,9 +26,10 @@ class ChatSessionResponse(BaseModel):
 
 class ChatHistoryItem(BaseModel):
     id: int
-    message: str
-    response: str
+    role: str  # 'user' or 'assistant'
+    content: str
     timestamp: str
+    conversation_id: int
 
     class Config:
         from_attributes = True

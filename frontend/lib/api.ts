@@ -155,6 +155,13 @@ export async function getConversationMessages(conversationId: number, token: str
     const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}/messages`, {
         headers: { "Authorization": `Bearer ${token}` },
     });
+    
+    if (!response.ok) {
+        const error = await response.text();
+        console.error(`Failed to get conversation messages: ${response.status}`, error);
+        throw new Error(`Failed to load conversation: ${response.status} - ${error}`);
+    }
+    
     return response.json();
 }
 

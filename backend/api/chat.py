@@ -609,6 +609,18 @@ async def get_conversation_messages(
     )
     messages = result.scalars().all()
     
+    # Convert to schema format
+    history_items = [
+        ChatHistoryItem(
+            id=msg.id,
+            role=msg.role,
+            content=msg.content,
+            timestamp=msg.timestamp.isoformat() if msg.timestamp else "",
+            conversation_id=msg.conversation_id
+        )
+        for msg in messages
+    ]
+    
     latency = time.time() - start_time
     logger.info(f"Conversation messages retrieved", extra={
         "user_id": current_user.id,
@@ -617,5 +629,5 @@ async def get_conversation_messages(
         "latency": f"{latency:.3f}s"
     })
     
-    return ChatHistoryList(history=messages)
+    return ChatHistoryList(history=history_items)
 
