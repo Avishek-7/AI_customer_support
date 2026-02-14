@@ -7,12 +7,19 @@ from llm.memory import get_memory, save_turn
 from retriever.retriever import FAISSRetriever
 from retriever.rerank import mmr
 from utils.config import settings
+from utils.metrics import (
+    RAG_RETRIEVAL_LATENCY,
+    RAG_RERANK_LATENCY,
+    LLM_LATENCY,
+    RAG_TOTAL_LATENCY,
+)
 from utils.logger import get_logger
 from utils.postprocess import postprocess_answer
 from utils.confidence import compute_confidence
 from utils.hallucination import detect_hallucination
 import httpx
 import numpy as np
+import time
 
 logger = get_logger("ai_engine.pipeline")
 
@@ -147,6 +154,8 @@ def answer_query(
         "document_ids": document_ids,
         "k": k
     })
+
+    total_start = time.perf_counter()
     
     # Get memory for session/user
     memory = get_memory(session_id)
@@ -159,20 +168,27 @@ def answer_query(
     )
 
     # Retrieve relevant chunks (langchain Documents)
+    retrieval_start = time.perf_counter()
     docs = retriever._get_relevant_documents(query)
+    retrieval_duration = time.perf_counter() - retrieval_start
+    RAG_RETRIEVAL_LATENCY.labels("sync").observe(retrieval_duration)
     logger.info(f"Retrieved {len(docs)} chunks for query")
 
-    # Apply MMR reranking for better diversity
-    if len(docs) > 1:
+    # Apply MMR reranking for better diversity (optional)
+    if settings.ENABLE_MMR_RERANK and len(docs) > 1:
+        rerank_start = time.perf_counter()
         query_emb = embed_text(query)
         doc_texts = [doc.page_content for doc in docs]
         doc_embs = embed_texts(doc_texts)
-        
-        # Get reranked indices using MMR
+
         top_k = min(k, len(docs))
         reranked_indices = mmr(query_emb, doc_embs, lambda_param=0.7, top_k=top_k)
         docs = [docs[i] for i in reranked_indices]
+        rerank_duration = time.perf_counter() - rerank_start
+        RAG_RERANK_LATENCY.labels("sync").observe(rerank_duration)
         logger.info(f"Applied MMR reranking, using top {len(docs)} diverse chunks")
+    else:
+        RAG_RERANK_LATENCY.labels("sync").observe(0)
 
     # Prepare context for LLM
     raw_chunks = [doc.page_content for doc in docs]
@@ -185,12 +201,15 @@ def answer_query(
     ) if history else ""
 
     # Call Gemini LLM with RAG context
+    llm_start = time.perf_counter()
     answer = generate_answer(
         question=query,
         context_chunks=context_chunks,
         system_prompt=system_prompt,
         chat_history=history_text,
     )
+    llm_duration = time.perf_counter() - llm_start
+    LLM_LATENCY.labels("sync").observe(llm_duration)
     
     # Postprocess the answer to clean up formatting and remove repetitions
     answer = postprocess_answer(answer)
@@ -214,6 +233,14 @@ def answer_query(
     logger.info("RAG query completed", extra={
         "answer_length": len(answer),
         "sources_count": len(sources)
+    })
+
+    total_duration = time.perf_counter() - total_start
+    RAG_TOTAL_LATENCY.labels("sync").observe(total_duration)
+    logger.info("RAG timing", extra={
+        "retrieval_ms": round(retrieval_duration * 1000, 2),
+        "llm_ms": round(llm_duration * 1000, 2),
+        "total_ms": round(total_duration * 1000, 2)
     })
 
     confidence = compute_confidence(sources, answer)
@@ -250,6 +277,8 @@ async def answer_query_stream(req):
         "k": k
     })
 
+    total_start = time.perf_counter()
+
     # Grab chat history for continuity
     memory = get_memory(req.session_id)
     history = memory.messages if memory else []
@@ -262,31 +291,34 @@ async def answer_query_stream(req):
     query_emb = embed_text(query)
 
     # Retrieve docs with document filtering applied at search level
+    retrieval_start = time.perf_counter()
     results = search_embeddings(query_emb, k=k, document_ids=document_ids)
-    
+    retrieval_duration = time.perf_counter() - retrieval_start
+    RAG_RETRIEVAL_LATENCY.labels("stream").observe(retrieval_duration)
+
     logger.info(f"FAISS search returned {len(results)} chunks BEFORE dedup", extra={
         "document_ids_in_results": [r.get("document_id") for r in results],
         "filter_document_ids": document_ids
     })
-    
+
     # Only remove exact or near-exact duplicate chunks within the same document
     # Different documents can have similar structure, so preserve cross-document chunks
     filtered_results = []
     seen_chunks = {}  # key: (doc_id, text_hash), value: text
-    
+
     for result in results:
         doc_id = result.get("document_id")
         chunk_text = result.get("text", "").strip()
-        
+
         # Skip if this exact chunk from same document was already seen
         chunk_key = (doc_id, hash(chunk_text))
         if chunk_key in seen_chunks:
             logger.debug(f"Skipping exact duplicate chunk from document {doc_id}")
             continue
-        
+
         filtered_results.append(result)
         seen_chunks[chunk_key] = chunk_text
-    
+
     results = filtered_results
     logger.info(f"Retrieved {len(results)} chunks for streaming query (after dedup)", extra={
         "document_ids": [r.get("document_id") for r in results],
@@ -295,32 +327,37 @@ async def answer_query_stream(req):
         "chunk_previews": [r.get("text", "")[:80] for r in results]
     })
 
-    # Apply MMR reranking for better diversity
-    if len(results) > 1:
+    # Apply MMR reranking for better diversity (optional)
+    if settings.ENABLE_MMR_RERANK and len(results) > 1:
+        rerank_start = time.perf_counter()
         result_texts = [r.get("text", "") for r in results]
         result_embs = embed_texts(result_texts)
-        
-        # Get reranked indices using MMR
+
         top_k = min(k, len(results))
         reranked_indices = mmr(query_emb, result_embs, lambda_param=0.7, top_k=top_k)
         results = [results[i] for i in reranked_indices]
+        rerank_duration = time.perf_counter() - rerank_start
+        RAG_RERANK_LATENCY.labels("stream").observe(rerank_duration)
         logger.info(f"Applied MMR reranking, using top {len(results)} diverse chunks")
+    else:
+        RAG_RERANK_LATENCY.labels("stream").observe(0)
 
     # Deduplicate context chunks to avoid repetition
     raw_chunks = [r.get("text", "") for r in results]
     context_chunks = _prepare_context_list(raw_chunks)
     sources = results
-    
+
     # Track full answer for logging and duplicate detection
     full_answer_tokens = []
     full_answer_so_far = ""
-    
+
     # Stream LLM - pass history for better responses
+    llm_start = time.perf_counter()
     async for token in stream_llm_answer(query, context_chunks, req.system_prompt, history_text):
         # Skip empty tokens
         if not token:
             continue
-        
+
         # Detect if token would cause repetition (check if this text already appeared)
         if len(full_answer_so_far) > 50:
             # Check if the new token is repeating recent content
@@ -330,10 +367,21 @@ async def answer_query_stream(req):
                 if len(token.strip()) > 3:
                     logger.debug(f"Skipping potentially repeated token: {token[:20]}")
                     continue
-        
+
         full_answer_tokens.append(token)
         full_answer_so_far += token
         yield {"type": "token", "content": token}
+
+    llm_duration = time.perf_counter() - llm_start
+    LLM_LATENCY.labels("stream").observe(llm_duration)
+
+    total_duration = time.perf_counter() - total_start
+    RAG_TOTAL_LATENCY.labels("stream").observe(total_duration)
+    logger.info("RAG streaming timing", extra={
+        "retrieval_ms": round(retrieval_duration * 1000, 2),
+        "llm_ms": round(llm_duration * 1000, 2),
+        "total_ms": round(total_duration * 1000, 2)
+    })
     
     # Log the complete streamed answer for debugging/comparison
     full_answer = "".join(full_answer_tokens)

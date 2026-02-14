@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Redis (for rate limiting)
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
+    # Chat response cache
+    CACHE_ENABLED: bool = True
+    CACHE_TTL_SECONDS: int = 1800
+    CACHE_PREFIX: str = "chat"
+
     # Frontend URL (for password reset links)
     FRONTEND_URL: str = "http://localhost:3000"
 

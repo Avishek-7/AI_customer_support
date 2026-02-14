@@ -13,6 +13,8 @@ from core.config import settings
 from core.rate_limit import rate_limit
 from core.error_handler import ErrorHandler
 from utils.usage_tracker import track_usage
+from utils.cache import get_cached_response, set_cached_response
+from utils.metrics import AI_ENGINE_LATENCY, CACHE_HITS, CACHE_MISSES
 from models.user import User
 from models.document import Document
 from models.chat import ChatHistory
@@ -143,35 +145,62 @@ async def chat_with_ai(
 
     logger.info(f"Querying AI engine", extra={"document_count": len(document_ids) if document_ids else "ALL"})
 
-    # Call AI Engine
-    async with httpx.AsyncClient() as client:
-        try:
-            ai_response = await client.post(
-                f"{AI_ENGINE_URL}/query",
-                json={
-                    "query": body.message,
-                    "system_prompt": body.system_prompt,
-                    "document_ids": document_ids,  # None means search all
-                    "k": 5,
-                },
-                timeout=40.0,
-            )
-            ai_response.raise_for_status()
-        except httpx.TimeoutException:
-            logger.error(f"AI engine timeout", extra={
-                "user_id": current_user.id,
-                "conversation_id": body.conversation_id
-            })
-            raise ErrorHandler.service_unavailable("AI engine is taking too long. Please try again.")
-        except httpx.HTTPError as e:
-            logger.error(f"AI engine error", extra={
-                "error": str(e),
-                "user_id": current_user.id,
-                "conversation_id": body.conversation_id
-            })
-            raise ErrorHandler.service_unavailable("AI engine is unavailable. Please try again later.")
-    
-    data = ai_response.json()
+    cached = await get_cached_response(
+        user_id=current_user.id,
+        conversation_id=body.conversation_id,
+        message=body.message,
+        system_prompt=body.system_prompt,
+        document_ids=document_ids,
+    )
+    if cached:
+        CACHE_HITS.labels("/chat").inc()
+        logger.info("Chat cache hit", extra={
+            "user_id": current_user.id,
+            "conversation_id": body.conversation_id
+        })
+        data = cached
+    else:
+        CACHE_MISSES.labels("/chat").inc()
+        # Call AI Engine
+        ai_start = time.perf_counter()
+        async with httpx.AsyncClient() as client:
+            try:
+                ai_response = await client.post(
+                    f"{AI_ENGINE_URL}/query",
+                    json={
+                        "query": body.message,
+                        "system_prompt": body.system_prompt,
+                        "document_ids": document_ids,  # None means search all
+                        "k": 5,
+                    },
+                    timeout=40.0,
+                )
+                ai_response.raise_for_status()
+            except httpx.TimeoutException:
+                logger.error(f"AI engine timeout", extra={
+                    "user_id": current_user.id,
+                    "conversation_id": body.conversation_id
+                })
+                raise ErrorHandler.service_unavailable("AI engine is taking too long. Please try again.")
+            except httpx.HTTPError as e:
+                logger.error(f"AI engine error", extra={
+                    "error": str(e),
+                    "user_id": current_user.id,
+                    "conversation_id": body.conversation_id
+                })
+                raise ErrorHandler.service_unavailable("AI engine is unavailable. Please try again later.")
+        ai_duration = time.perf_counter() - ai_start
+        AI_ENGINE_LATENCY.labels("/query").observe(ai_duration)
+
+        data = ai_response.json()
+        await set_cached_response(
+            user_id=current_user.id,
+            conversation_id=body.conversation_id,
+            message=body.message,
+            system_prompt=body.system_prompt,
+            document_ids=document_ids,
+            response=data,
+        )
     
     # Log the full answer received from AI engine for debugging/comparison
     logger.info("=== BACKEND RECEIVED ANSWER ===", extra={

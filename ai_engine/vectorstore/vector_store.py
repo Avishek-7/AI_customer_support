@@ -6,6 +6,7 @@ import numpy as np
 import faiss
 import httpx
 import asyncio
+import threading
 from embeddings.embedder import EMBEDDING_DIM
 from utils.logger import get_logger
 from utils.config import settings
@@ -20,6 +21,10 @@ META_PATH = os.path.join(DATA_DIR, "metadata.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
+_INDEX_CACHE: Optional[faiss.IndexFlatL2] = None
+_META_CACHE: Optional[List[Dict[str, Any]]] = None
+_CACHE_LOCK = threading.Lock()
+
 # Load / Create Index
 def _empty_index() -> faiss.IndexFlatL2:
     """
@@ -31,26 +36,34 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
     """
     Load FAISS index + metadata, or initialize if missing.
     """
+    global _INDEX_CACHE, _META_CACHE
 
-    # Load metadata (list of dicts)
-    if os.path.exists(META_PATH):
-        with open(META_PATH, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-    else:
-        metadata = []
+    with _CACHE_LOCK:
+        if _INDEX_CACHE is not None and _META_CACHE is not None:
+            return _INDEX_CACHE, _META_CACHE
 
-    # Load index
-    if os.path.exists(INDEX_PATH):
-        index = faiss.read_index(INDEX_PATH)
-    else:
-        index = _empty_index()
+        # Load metadata (list of dicts)
+        if os.path.exists(META_PATH):
+            with open(META_PATH, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        else:
+            metadata = []
 
-    # Safety check (FAISS count must match metadata count)
-    if index.ntotal != len(metadata):
-        index = _empty_index()
-        metadata = []
+        # Load index
+        if os.path.exists(INDEX_PATH):
+            index = faiss.read_index(INDEX_PATH)
+        else:
+            index = _empty_index()
 
-    return index, metadata
+        # Safety check (FAISS count must match metadata count)
+        if index.ntotal != len(metadata):
+            index = _empty_index()
+            metadata = []
+
+        _INDEX_CACHE = index
+        _META_CACHE = metadata
+
+        return index, metadata
 
 
 # Save Index and Metadata
@@ -58,9 +71,15 @@ def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, A
     """
     Save FAISS index + JSON metadata to disk AND sync to database
     """
+    global _INDEX_CACHE, _META_CACHE
+
     faiss.write_index(index, INDEX_PATH)
     with open(META_PATH, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+    with _CACHE_LOCK:
+        _INDEX_CACHE = index
+        _META_CACHE = metadata
     
     # Sync metadata to database (best effort)
     # Always use sync approach since this function is called from sync context

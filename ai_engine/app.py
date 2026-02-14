@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -10,8 +10,10 @@ from vectorstore.vector_store import delete_document
 from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
 from llm.llm import critique_answer, regenerate_answer
 from utils.hallucination import detect_hallucination
-from embeddings.embedder import embed_text
-from vectorstore.vector_store import search_embeddings
+from embeddings.embedder import embed_text, get_embedding_model
+from vectorstore.vector_store import search_embeddings, load_index_and_metadata
+from utils.metrics import REQUEST_LATENCY, render_metrics
+import time
 
 # Initialize logging on startup
 init_logging()
@@ -22,6 +24,37 @@ app = FastAPI(
     description="Handles embedding, FAISS reterieval, and LLM generation.",
     version="1.0.0"
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    try:
+        get_embedding_model()
+        load_index_and_metadata()
+        logger.info("AI engine warmup completed")
+    except Exception as exc:
+        logger.warning("AI engine warmup failed", extra={"error": str(exc)})
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration = time.perf_counter() - start_time
+        REQUEST_LATENCY.labels(request.url.path, request.method, "500").observe(duration)
+        raise
+
+    duration = time.perf_counter() - start_time
+    REQUEST_LATENCY.labels(request.url.path, request.method, str(response.status_code)).observe(duration)
+    return response
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    data, content_type = render_metrics()
+    return Response(content=data, media_type=content_type)
 
 # Request and Response Models
 class IndexDocumentRequest(BaseModel):

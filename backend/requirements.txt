@@ -25,3 +25,4 @@ requests
 pymupdf                   # PDF handling
 redis                     # Rate limiting
 numpy                     # Required for some utilities
+prometheus-client         # Metrics

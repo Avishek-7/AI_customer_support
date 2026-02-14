@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from api import auth
 from api import chat
 from api import documents
@@ -8,7 +8,9 @@ from api import vectors
 from core.database import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
+from utils.metrics import REQUEST_LATENCY, render_metrics
 import uuid
+import time
 
 # Initialize logging
 init_logging()
@@ -38,6 +40,7 @@ app.add_middleware(
 async def request_id_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     set_request_id(request_id)
+    start_time = time.perf_counter()
     logger.info(f"Request started", extra={
         "method": request.method,
         "path": request.url.path,
@@ -45,16 +48,26 @@ async def request_id_middleware(request: Request, call_next):
     })
     try:
         response = await call_next(request)
+        duration = time.perf_counter() - start_time
+        REQUEST_LATENCY.labels(request.url.path, request.method, str(response.status_code)).observe(duration)
         logger.info(f"Request completed", extra={
             "status_code": response.status_code,
+            "duration_ms": round(duration * 1000, 2),
             "request_id": request_id
         })
         return response
     except Exception as e:
+        duration = time.perf_counter() - start_time
+        REQUEST_LATENCY.labels(request.url.path, request.method, "500").observe(duration)
         logger.error(f"Request failed", extra={"error": str(e), "request_id": request_id})
         raise
     finally:
         clear_request_id()
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    data, content_type = render_metrics()
+    return Response(content=data, media_type=content_type)
 
 # Routes
 app.include_router(auth.router)
