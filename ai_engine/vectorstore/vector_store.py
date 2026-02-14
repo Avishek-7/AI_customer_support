@@ -40,7 +40,9 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
 
     with _CACHE_LOCK:
         if _INDEX_CACHE is not None and _META_CACHE is not None:
-            return _INDEX_CACHE, _META_CACHE
+            # Return copies to prevent callers from mutating cache directly
+            index_copy = faiss.clone_index(_INDEX_CACHE)
+            return index_copy, list(_META_CACHE)
 
         # Load metadata (list of dicts)
         if os.path.exists(META_PATH):
@@ -63,7 +65,8 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
         _INDEX_CACHE = index
         _META_CACHE = metadata
 
-        return index, metadata
+        # Return copies to prevent callers from mutating cache directly
+        return faiss.clone_index(index), list(metadata)
 
 
 # Save Index and Metadata
@@ -73,11 +76,11 @@ def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, A
     """
     global _INDEX_CACHE, _META_CACHE
 
-    faiss.write_index(index, INDEX_PATH)
-    with open(META_PATH, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=2)
-
     with _CACHE_LOCK:
+        faiss.write_index(index, INDEX_PATH)
+        with open(META_PATH, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        
         _INDEX_CACHE = index
         _META_CACHE = metadata
     

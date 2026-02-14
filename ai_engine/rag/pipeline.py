@@ -308,16 +308,16 @@ async def answer_query_stream(req):
 
     for result in results:
         doc_id = result.get("document_id")
-        chunk_text = result.get("text", "").strip()
+        chunk_content = result.get("text", "").strip()
 
         # Skip if this exact chunk from same document was already seen
-        chunk_key = (doc_id, hash(chunk_text))
+        chunk_key = (doc_id, hash(chunk_content))
         if chunk_key in seen_chunks:
             logger.debug(f"Skipping exact duplicate chunk from document {doc_id}")
             continue
 
         filtered_results.append(result)
-        seen_chunks[chunk_key] = chunk_text
+        seen_chunks[chunk_key] = chunk_content
 
     results = filtered_results
     logger.info(f"Retrieved {len(results)} chunks for streaming query (after dedup)", extra={

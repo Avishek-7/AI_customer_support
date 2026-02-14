@@ -145,13 +145,20 @@ async def chat_with_ai(
 
     logger.info(f"Querying AI engine", extra={"document_count": len(document_ids) if document_ids else "ALL"})
 
-    cached = await get_cached_response(
-        user_id=current_user.id,
-        conversation_id=body.conversation_id,
-        message=body.message,
-        system_prompt=body.system_prompt,
-        document_ids=document_ids,
-    )
+    try:
+        cached = await get_cached_response(
+            user_id=current_user.id,
+            conversation_id=body.conversation_id,
+            message=body.message,
+            system_prompt=body.system_prompt,
+            document_ids=document_ids,
+        )
+    except Exception as e:
+        logger.warning("Cache lookup failed, proceeding without cache", extra={
+            "user_id": current_user.id,
+            "error": str(e)
+        })
+        cached = None
     if cached:
         CACHE_HITS.labels("/chat").inc()
         logger.info("Chat cache hit", extra={

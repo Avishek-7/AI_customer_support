@@ -41,6 +41,7 @@ async def request_id_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     set_request_id(request_id)
     start_time = time.perf_counter()
+    
     logger.info(f"Request started", extra={
         "method": request.method,
         "path": request.url.path,
@@ -49,7 +50,12 @@ async def request_id_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         duration = time.perf_counter() - start_time
-        REQUEST_LATENCY.labels(request.url.path, request.method, str(response.status_code)).observe(duration)
+        
+        # Use route template pattern (e.g., /documents/{doc_id}) to avoid cardinality explosion
+        route = request.scope.get("route")
+        path_template = route.path if route else request.url.path
+        REQUEST_LATENCY.labels(path_template, request.method, str(response.status_code)).observe(duration)
+        
         logger.info(f"Request completed", extra={
             "status_code": response.status_code,
             "duration_ms": round(duration * 1000, 2),
@@ -58,7 +64,12 @@ async def request_id_middleware(request: Request, call_next):
         return response
     except Exception as e:
         duration = time.perf_counter() - start_time
-        REQUEST_LATENCY.labels(request.url.path, request.method, "500").observe(duration)
+        
+        # Use route template pattern for error metrics
+        route = request.scope.get("route")
+        path_template = route.path if route else request.url.path
+        REQUEST_LATENCY.labels(path_template, request.method, "500").observe(duration)
+        
         logger.error(f"Request failed", extra={"error": str(e), "request_id": request_id})
         raise
     finally:

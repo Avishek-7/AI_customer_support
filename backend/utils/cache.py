@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ from utils.logger import get_logger
 logger = get_logger("backend.utils.cache")
 
 _redis_client: Optional[Redis] = None
+_redis_lock = asyncio.Lock()
 
 
 def _normalize_text(text: str) -> str:
@@ -39,11 +41,13 @@ async def _get_redis() -> Optional[Redis]:
     if not settings.REDIS_URL:
         return None
     if _redis_client is None:
-        _redis_client = Redis.from_url(
-            settings.REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=1,
-        )
+        async with _redis_lock:
+            if _redis_client is None:  # Double-check after acquiring lock
+                _redis_client = Redis.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=1,
+                )
     return _redis_client
 
 

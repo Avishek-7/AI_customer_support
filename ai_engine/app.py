@@ -43,11 +43,17 @@ async def metrics_middleware(request: Request, call_next):
         response = await call_next(request)
     except Exception:
         duration = time.perf_counter() - start_time
-        REQUEST_LATENCY.labels(request.url.path, request.method, "500").observe(duration)
+        # Use route template pattern (e.g., /query, /delete-document/{id}) to avoid cardinality explosion
+        route = request.scope.get("route")
+        path_template = route.path if route else request.url.path
+        REQUEST_LATENCY.labels(path_template, request.method, "500").observe(duration)
         raise
 
     duration = time.perf_counter() - start_time
-    REQUEST_LATENCY.labels(request.url.path, request.method, str(response.status_code)).observe(duration)
+    # Use route template pattern for metrics to prevent unbounded cardinality
+    route = request.scope.get("route")
+    path_template = route.path if route else request.url.path
+    REQUEST_LATENCY.labels(path_template, request.method, str(response.status_code)).observe(duration)
     return response
 
 
