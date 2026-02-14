@@ -23,10 +23,15 @@ export default function ChatInput({ onSend }: { onSend: (msg: string) => void })
           }
         }}
         rows={1}
-        className="flex-1 resize-none bg-gray-900 border border-gray-700 px-3 py-2 rounded-md text-white focus:outline-none"
-        placeholder="Ask a question (Ctrl/Cmt+Enter to send)"
+        className="flex-1 resize-none bg-gray-900 border border-gray-700 px-2 md:px-3 py-2 rounded-md text-sm md:text-base text-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+        placeholder="Ask a question (Ctrl/Cmd+Enter to send)"
       />
-      <button onClick={sendMessage} className="bg-blue-600 px-4 py-2 rounded-md">Send</button>
+      <button 
+        onClick={sendMessage} 
+        className="bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-md text-sm md:text-base font-medium transition-colors flex-shrink-0"
+      >
+        Send
+      </button>
     </div>
   )
 }

@@ -43,6 +43,7 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [activeTab, setActiveTab] = useState<"conversations" | "documents">("conversations");
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   const chatRef = useRef<HTMLDivElement>(null);
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -302,11 +303,20 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white">
+    <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
       <Navigation />
       <div className="flex flex-1 overflow-hidden">
-        {/* Combined Sidebar */}
-        <ResizableSidebar defaultWidth={300} minWidth={250} maxWidth={450}>
+        {/* Mobile Sidebar */}
+        {showMobileSidebar && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-20 md:hidden"
+            onClick={() => setShowMobileSidebar(false)}
+          />
+        )}
+        
+        {/* Sidebar - Hidden on mobile, visible on md+ */}
+        <div className={`absolute top-[60px] md:relative z-30 md:z-auto h-auto md:h-full w-full md:w-auto transition-all duration-300 ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+          <ResizableSidebar defaultWidth={300} minWidth={250} maxWidth={450}>
           {/* Tab Navigation */}
           <div className="flex gap-2 mb-4 border-b border-gray-700">
             <button
@@ -382,24 +392,34 @@ export default function ChatPage() {
             )}
           </div>
         </ResizableSidebar>
+        </div>
 
         {/* Main Chat Area */}
-        <div className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1 overflow-hidden">
           {/* Header */}
-          <div className="border-b border-gray-800 p-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Chat</h1>
-              <p className="text-sm text-gray-400">{conversationId ? `Conversation #${conversationId}` : "No conversation selected"}</p>
+          <div className="border-b border-gray-800 p-3 md:p-4 flex items-center justify-between flex-shrink-0 gap-2">
+            <button 
+              onClick={() => setShowMobileSidebar(!showMobileSidebar)}
+              className="md:hidden p-2 hover:bg-gray-800 rounded transition-colors"
+              title="Toggle sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl md:text-2xl font-bold">Chat</h1>
+              <p className="text-xs md:text-sm text-gray-400">{conversationId ? `Conversation #${conversationId}` : "No conversation selected"}</p>
             </div>
             {messages.length > 0 && (
-              <button onClick={downloadTranscript} className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-lg">
+              <button onClick={downloadTranscript} className="px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm bg-gray-700 hover:bg-gray-600 rounded-lg flex-shrink-0">
                 Download
               </button>
             )}
           </div>
 
           {/* Messages */}
-          <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div ref={chatRef} className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4">
             {!conversationId ? (
               <div className="flex items-center justify-center h-full text-gray-400">
                 <div className="text-center">
@@ -436,7 +456,7 @@ export default function ChatPage() {
           </div>
 
           {/* Input */}
-          <div className="border-t border-gray-800 p-4">{conversationId && <ChatInput onSend={handleSend} />}</div>
+          <div className="border-t border-gray-800 p-3 md:p-4 flex-shrink-0 bg-gray-900 sticky bottom-0 z-10">{conversationId && <ChatInput onSend={handleSend} />}</div>
         </div>
       </div>
 
