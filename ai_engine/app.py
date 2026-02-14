@@ -45,7 +45,7 @@ async def metrics_middleware(request: Request, call_next):
         duration = time.perf_counter() - start_time
         # Use route template pattern (e.g., /query, /delete-document/{id}) to avoid cardinality explosion
         route = request.scope.get("route")
-        path_template = route.path if route else request.url.path
+        path_template = getattr(route, "path", None) or request.url.path
         REQUEST_LATENCY.labels(path_template, request.method, "500").observe(duration)
         raise
 

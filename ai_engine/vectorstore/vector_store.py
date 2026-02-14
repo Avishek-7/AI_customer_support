@@ -42,7 +42,7 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
         if _INDEX_CACHE is not None and _META_CACHE is not None:
             # Return copies to prevent callers from mutating cache directly
             index_copy = faiss.clone_index(_INDEX_CACHE)
-            return index_copy, list(_META_CACHE)
+            return index_copy, [m.copy() for m in _META_CACHE]
 
         # Load metadata (list of dicts)
         if os.path.exists(META_PATH):
@@ -66,7 +66,7 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
         _META_CACHE = metadata
 
         # Return copies to prevent callers from mutating cache directly
-        return faiss.clone_index(index), list(metadata)
+        return faiss.clone_index(index), [m.copy() for m in metadata]
 
 
 # Save Index and Metadata
