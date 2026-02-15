@@ -7,6 +7,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 export default function ChatHistoryPage() {
   const [history, setHistory] = useState<any[]>([]);
 
+  const formatTimestamp = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().replace("T", " ").slice(0, 19);
+  };
+
   useEffect(() => {
     fetch(`${API_BASE}/chat/history`, {
       headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
@@ -29,7 +35,7 @@ export default function ChatHistoryPage() {
             <p>{item.response}</p>
 
             <p className="text-xs opacity-60 mt-2">
-              {new Date(item.timestamp).toLocaleString()}
+              {formatTimestamp(item.timestamp)}
             </p>
           </div>
 

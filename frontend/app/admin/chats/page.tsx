@@ -10,6 +10,12 @@ export default function AdminChatsPage() {
   const [chats, setChats] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
 
+  const formatTimestamp = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().replace("T", " ").slice(0, 19);
+  };
+
   const getToken = () => {
     if (typeof window === "undefined") return null;
     return localStorage.getItem("token");
@@ -66,7 +72,7 @@ export default function AdminChatsPage() {
                       <td className="px-6 py-4 font-medium">User #{String(chat.user_id)}</td>
                       <td className="px-6 py-4 text-gray-300 max-w-md truncate">{String(chat.message)}</td>
                       <td className="px-6 py-4 text-gray-400">
-                        {new Date(String(chat.timestamp)).toLocaleString()}
+                        {formatTimestamp(String(chat.timestamp))}
                       </td>
                     </tr>
                   ))}

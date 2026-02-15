@@ -28,6 +28,12 @@ export default function ConversationList({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
+  const formatDate = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().slice(0, 10);
+  };
+
   const handleStartEdit = (conv: Conversation) => {
     setEditingId(conv.id);
     setEditTitle(conv.title);
@@ -93,7 +99,7 @@ export default function ConversationList({
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm font-medium truncate">{conv.title}</p>
                       <p className="text-gray-400 text-xs mt-1">
-                        {new Date(conv.created_at).toLocaleDateString()}
+                        {formatDate(conv.created_at)}
                       </p>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">

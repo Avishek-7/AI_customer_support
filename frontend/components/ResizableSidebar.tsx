@@ -10,6 +10,8 @@ interface ResizableSidebarProps {
   minWidth?: number;
   maxWidth?: number;
   side?: "left" | "right";
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 export default function ResizableSidebar({
@@ -18,11 +20,22 @@ export default function ResizableSidebar({
   minWidth = 200,
   maxWidth = 520,
   side = "left",
+  collapsed,
+  onCollapsedChange,
 }: ResizableSidebarProps) {
   const [width, setWidth] = useState<number>(defaultWidth);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
   const dragging = useRef(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const isCollapsed = collapsed ?? internalCollapsed;
+
+  const setCollapsed = (next: boolean) => {
+    if (collapsed === undefined) {
+      setInternalCollapsed(next);
+    }
+    onCollapsedChange?.(next);
+  };
 
   function onMouseDown() {
     dragging.current = true;
@@ -76,7 +89,7 @@ export default function ResizableSidebar({
     >
       {/* Toggle Button */}
       <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
+        onClick={() => setCollapsed(!isCollapsed)}
         className="absolute top-4 right-2 z-50 p-1 hover:bg-gray-700 rounded transition-colors"
         title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >

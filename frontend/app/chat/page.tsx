@@ -44,6 +44,7 @@ export default function ChatPage() {
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [activeTab, setActiveTab] = useState<"conversations" | "documents">("conversations");
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const chatRef = useRef<HTMLDivElement>(null);
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
@@ -195,6 +196,15 @@ export default function ChatPage() {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  // Auto-expand sidebar when a conversation is deselected (e.g. deleted)
+  const prevConversationId = useRef(conversationId);
+  useEffect(() => {
+    if (prevConversationId.current !== null && conversationId === null && sidebarCollapsed) {
+      setSidebarCollapsed(false);
+    }
+    prevConversationId.current = conversationId;
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function upsertAssistantChunk(chunk: string) {
     setMessages((prev) => {
       const copy = [...prev];
@@ -303,7 +313,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden">
+    <div className="flex flex-col h-[100dvh] bg-gray-900 text-white overflow-hidden">
       <Navigation />
       <div className="flex flex-1 overflow-hidden">
         {/* Mobile Sidebar */}
@@ -316,7 +326,13 @@ export default function ChatPage() {
         
         {/* Sidebar - Hidden on mobile, visible on md+ */}
         <div className={`absolute top-[60px] md:relative z-30 md:z-auto h-auto md:h-full w-full md:w-auto transition-all duration-300 ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-          <ResizableSidebar defaultWidth={300} minWidth={250} maxWidth={450}>
+          <ResizableSidebar
+            defaultWidth={300}
+            minWidth={250}
+            maxWidth={450}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
+          >
           {/* Tab Navigation */}
           <div className="flex gap-2 mb-4 border-b border-gray-700">
             <button
@@ -407,6 +423,13 @@ export default function ChatPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
+            <button
+              onClick={() => setSidebarCollapsed((prev) => !prev)}
+              className="hidden md:inline-flex items-center gap-2 px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            >
+              {sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar"}
+            </button>
             <div className="flex-1 min-w-0">
               <h1 className="text-xl md:text-2xl font-bold">Chat</h1>
               <p className="text-xs md:text-sm text-gray-400">{conversationId ? `Conversation #${conversationId}` : "No conversation selected"}</p>
@@ -430,6 +453,17 @@ export default function ChatPage() {
                   >
                     + New Conversation
                   </button>
+                  <div className="mt-3">
+                    <button
+                      onClick={() => {
+                        setSidebarCollapsed(false);
+                        setShowMobileSidebar(true);
+                      }}
+                      className="px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                    >
+                      Open sidebar
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : messages.length === 0 ? (
@@ -456,7 +490,9 @@ export default function ChatPage() {
           </div>
 
           {/* Input */}
-          <div className="border-t border-gray-800 p-3 md:p-4 flex-shrink-0 bg-gray-900 sticky bottom-0 z-10">{conversationId && <ChatInput onSend={handleSend} />}</div>
+          <div className="border-t border-gray-800 p-3 md:p-4 pb-[env(safe-area-inset-bottom)] flex-shrink-0 bg-gray-900">
+            <ChatInput onSend={handleSend} />
+          </div>
         </div>
       </div>
 
