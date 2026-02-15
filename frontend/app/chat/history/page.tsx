@@ -10,7 +10,7 @@ export default function ChatHistoryPage() {
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return date.toISOString().replace("T", " ").slice(0, 19);
+    return date.toLocaleString();
   };
 
   useEffect(() => {
