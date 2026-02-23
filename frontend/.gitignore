@@ -51,7 +51,3 @@ next-env.d.ts
 *.swp
 *.swo
 *~
-
-package-lock.json
-yarn.lock
-pnpm-lock.yaml

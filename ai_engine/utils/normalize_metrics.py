@@ -36,13 +36,13 @@ def normalize_path_to_endpoint(path: str) -> str:
     Returns:
         A fixed endpoint name suitable for Prometheus labels
     """
-    # Handle empty or root-only paths
-    if not path or path.strip("/") == "":
-        return "/unknown"
-    
     # Direct match in mapping
     if path in _PATH_TO_ENDPOINT:
         return _PATH_TO_ENDPOINT[path]
+
+    # Handle empty or root-only paths
+    if not path or path.strip("/") == "":
+        return "/unknown"
     
     # Extract base path (first two segments for /debug/*, first one for others)
     parts = path.lstrip("/").split("/")

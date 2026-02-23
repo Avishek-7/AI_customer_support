@@ -3,7 +3,6 @@
 
 import React from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -38,12 +37,12 @@ export default function ChatBubble({
           <div className={`${isUser ? "bg-blue-600" : "bg-gray-800"} p-4 rounded-2xl whitespace-pre-wrap`}>
             <div className="prose prose-invert max-w-none">
               <ReactMarkdown
-                rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                rehypePlugins={[rehypeHighlight]}
                 components={{
-                  code({ className, children, ...props }) {
+                  code({ inline, className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || "");
                     const lang = match ? match[1] : "";
-                    const isInline = !match;
+                    const isInline = inline === true;
                     if (!isInline) {
                       return (
                         <SyntaxHighlighter

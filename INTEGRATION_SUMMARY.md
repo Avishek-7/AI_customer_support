@@ -32,11 +32,9 @@ The hybrid vector storage system is now **fully integrated** into your AI Custom
 ### AI Engine Changes
 
 5. **`ai_engine/vectorstore/vector_store.py`** - Enhanced ✨
-   - Added `_sync_metadata_to_db()` - Syncs to PostgreSQL after FAISS save
-   - Added `_delete_metadata_from_db()` - Removes from PostgreSQL on delete
-   - Updated `save_index_and_metadata()` - Calls DB sync
-   - Updated `delete_document()` - Calls DB cleanup
-   - Imported necessary dependencies (`httpx`, `settings`)
+   - Uses explicit sync and async pathways for metadata synchronization
+   - Calls backend vector metadata endpoints after FAISS writes/deletes
+   - Note: this introduces coupling between services and should be migrated to event-based integration where possible
 
 ### Documentation
 
@@ -118,10 +116,10 @@ curl http://localhost:8000/vectors/stats
 - **FAISS**: Fast vector similarity search (in-memory, file-backed)
 - **PostgreSQL**: Persistent metadata with relationships
 
-### 2. **Automatic Synchronization**
-- FAISS operations automatically sync to database
-- Best-effort sync (doesn't block on failure)
-- Logged for monitoring
+### 4. **Synchronization Behavior**
+- FAISS operations trigger metadata sync to database
+- Current behavior is best-effort/eventual consistency (not distributed atomic commit)
+- Failures are logged and should be monitored with reconciliation alerts
 
 ### 3. **Full CRUD Operations**
 - Create: Sync on document index
@@ -160,6 +158,9 @@ CREATE TABLE vector_metadata (
 CREATE INDEX idx_vector_document_id ON vector_metadata(document_id);
 CREATE INDEX idx_vector_document_chunk ON vector_metadata(document_id, chunk_index);
 CREATE INDEX idx_vector_faiss_index ON vector_metadata(faiss_index);
+
+-- Required constraint to prevent duplicate chunks per document
+CREATE UNIQUE INDEX uq_vector_document_chunk ON vector_metadata(document_id, chunk_index);
 ```
 
 ## 🎯 Benefits
@@ -199,6 +200,24 @@ stats = db.query(
 - Separate concerns (search vs metadata)
 - Easy to add new metadata fields
 
+### Failure Modes & Recovery
+- **Transaction handling**: if FAISS write succeeds and DB sync fails, mark operation for retry and reconciliation.
+- **Idempotency**: retries should use deterministic document/chunk keys to prevent duplicate metadata rows.
+- **Concurrency**: guard concurrent writes/deletes per `document_id` to avoid race conditions.
+- **Rollback procedures**: on repeated sync failure, stop writes for affected document, resync metadata, then re-enable.
+
+### Performance & Throughput
+- Direct synchronous HTTP callbacks in hot paths reduce throughput under load.
+- Prefer async batching and/or event-driven propagation for better concurrency.
+
+### Monitoring & Alerting
+- Track FAISS count vs DB count divergence and alert on sustained mismatch.
+- Track sync failure rate, retry exhaustion, and endpoint latency (p95/p99).
+
+### Disaster Recovery
+- Keep backups of FAISS index files and `vector_metadata` snapshots.
+- Document restore order and run consistency validation after restore/migration.
+
 ## 🔍 API Endpoints
 
 | Method | Endpoint | Description |
@@ -207,6 +226,12 @@ stats = db.query(
 | GET | `/vectors/stats` | Get storage statistics |
 | GET | `/vectors/document/{id}` | Get document's chunks |
 | DELETE | `/vectors/document/{id}` | Delete document's chunks |
+
+Authorization expectations:
+- All endpoints should require authentication (for example `Authorization: Bearer <token>`).
+- `POST /vectors/sync` should be admin/service-only with elevated permission.
+- `GET /vectors/document/{id}` and `DELETE /vectors/document/{id}` should enforce ownership or admin authorization (`403` when unauthorized).
+- Include audit logging for sync/delete operations (actor, target document, timestamp).
 
 ## 📝 Example Usage
 

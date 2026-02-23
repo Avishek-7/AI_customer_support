@@ -21,7 +21,7 @@ def get_embedding_model() -> SentenceTransformer:
 
 def embed_texts(texts: List[str]) -> np.ndarray:
     """
-    Embed multiple text cuhunks into 2D numpy array.
+    Embed multiple text chunks into 2D numpy array.
     Returns shape: (num_texts, EMBEDDING_DIM) 
     """
     logger.debug(f"Embedding texts", extra={"count": len(texts)})

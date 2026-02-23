@@ -8,9 +8,6 @@ from sqlalchemy.orm import Session
 
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
-    db.add(new_obj)
-    db.commit()
-    db.refresh(new_obj)
     return user
 ```
 
@@ -22,9 +19,6 @@ from sqlalchemy import select
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).filter(User.id == user_id))
     user = result.scalar_one_or_none()
-    db.add(new_obj)
-    await db.commit()
-    await db.refresh(new_obj)
     return user
 ```
 
@@ -91,6 +85,8 @@ async def get_db():
 count = db.query(User).count()
 
 # ✅ After
+from sqlalchemy import func
+
 result = await db.execute(select(func.count(User.id)))
 count = result.scalar()
 ```
@@ -191,13 +187,15 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
 
 ## Background Tasks
 
-### Sync Fallback (if no event loop)
+### Explicit Sync/Async Entry Points
 ```python
-try:
-    asyncio.create_task(async_function())
-except RuntimeError:
-    # No event loop - use sync fallback
-    sync_function()
+def do_work_sync():
+    # sync implementation for sync callers
+    ...
+
+async def do_work_async():
+    # async implementation for async callers
+    ...
 ```
 
 ## Key Rules

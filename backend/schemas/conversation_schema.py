@@ -22,3 +22,6 @@ class ConversationUpdate(BaseModel):
 
 class ConversationList(BaseModel):
     conversations: list[ConversationResponse]
+    total: int = 0
+    limit: int = 50
+    offset: int = 0

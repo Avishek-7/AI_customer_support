@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, Float, DateTime, ForeignKey, Index
+from sqlalchemy import Column, Integer, Text, Float, DateTime, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from core.database import Base
 from datetime import datetime
@@ -23,4 +23,5 @@ class VectorMetadata(Base):
     # Composite index for efficient queries
     __table_args__ = (
         Index('idx_document_chunk', 'document_id', 'chunk_index'),
+        UniqueConstraint('document_id', 'chunk_index', name='uq_vector_document_chunk'),
     )

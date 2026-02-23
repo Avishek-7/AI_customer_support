@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
 import time
+import hashlib
 
 from core.database import get_db
 from core.security import get_current_user, hash_password
@@ -20,6 +21,10 @@ from schemas.user_schema import (
 logger = get_logger("backend.api.users")
 
 router = APIRouter(prefix="/users", tags=["users"]) 
+
+
+def _email_hash(email: str) -> str:
+    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
 
 
 # Helper for access control
@@ -66,13 +71,17 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db), current_use
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
 async def create_user(body: UserCreateAdmin, db: AsyncSession = Depends(get_db)):
     start_time = time.time()
-    logger.info("Admin creating user", extra={"email": body.email})
+    user_email_hash = _email_hash(body.email)
+    logger.info("Admin creating user", extra={"user_email_hash": user_email_hash})
+
+    if body.role not in ("user", "admin"):
+        raise ErrorHandler.bad_request("invalid role")
 
     # Ensure email uniqueness
     result = await db.execute(select(User).filter(User.email == body.email))
     existing = result.scalar_one_or_none()
     if existing:
-        logger.warning(f"User creation failed - email exists", extra={"email": body.email})
+        logger.warning(f"User creation failed - email exists", extra={"user_email_hash": user_email_hash})
         raise ErrorHandler.conflict("Email already registered")
 
     try:
@@ -80,18 +89,18 @@ async def create_user(body: UserCreateAdmin, db: AsyncSession = Depends(get_db))
             email=body.email,
             name=body.name,
             password_hash=hash_password(body.password),
-            role=body.role if body.role in ("user", "admin") else "user",
+            role=body.role,
         )
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
         
         latency = time.time() - start_time
-        logger.info("User created by admin", extra={"user_id": new_user.id, "email": new_user.email, "latency": f"{latency:.3f}s"})
+        logger.info("User created by admin", extra={"user_id": new_user.id, "latency": f"{latency:.3f}s"})
         return new_user
     except Exception as e:
         await db.rollback()
-        logger.error("Failed to create user", extra={"email": body.email, "error": str(e)})
+        logger.error("Failed to create user", extra={"user_email_hash": user_email_hash, "error": str(e)})
         raise ErrorHandler.internal_error("Failed to create user")
 
 
@@ -108,7 +117,7 @@ async def update_user(user_id: int, body: UserUpdate, db: AsyncSession = Depends
     if body.email and body.email != user.email:
         email_check = await db.execute(select(User).filter(User.email == body.email))
         if email_check.scalar_one_or_none():
-            logger.warning(f"Email update failed - email already exists", extra={"email": body.email})
+            logger.warning(f"Email update failed - email already exists", extra={"target_user_id": user_id})
             raise ErrorHandler.conflict("Email already in use")
         user.email = body.email
 

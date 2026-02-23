@@ -70,6 +70,13 @@ New endpoints for vector metadata management:
 | `/vectors/document/{id}` | DELETE | Delete all chunks for a document |
 | `/vectors/stats` | GET | Get vector storage statistics |
 
+Security controls for `backend/api/vectors.py`:
+- Require authenticated service-to-service access for `POST /vectors/sync` and `DELETE /vectors/document/{id}`
+- Enforce authorization checks (admin/service role or explicit scopes like `vectors:write` / `vectors:delete`)
+- Validate and sanitize `{id}` as an integer and reject invalid payload fields
+- Apply rate limiting and request auditing (actor, timestamp, request metadata)
+- Enforce TLS in transit and avoid leaking internal error details in responses
+
 ## Setup & Migration
 
 ### 1. Run Database Migration
@@ -165,7 +172,7 @@ chunks = db.query(VectorMetadata).filter(
    - Generates embeddings
    - Stores vectors in FAISS
    - **Syncs metadata to PostgreSQL** ✨
-4. Both FAISS and DB are updated atomically
+4. FAISS and DB are updated using best-effort, eventually-consistent synchronization (not a distributed atomic transaction)
 
 ### Document Deletion
 1. User deletes document
@@ -194,6 +201,30 @@ curl -X POST http://localhost:8000/vectors/sync \
   -H "Content-Type: application/json" \
   -d @data/metadata.json
 ```
+
+`data/metadata.json` should match the `VectorMetadata` contract used by `/vectors/sync`:
+
+```json
+{
+    "metadata": [
+        {
+            "document_id": 1,
+            "chunk_id": 0,
+            "title": "Getting Started",
+            "text": "Sample chunk text..."
+        },
+        {
+            "document_id": 1,
+            "chunk_id": 1,
+            "title": "Getting Started",
+            "text": "Another chunk..."
+        }
+    ]
+}
+```
+
+Required fields per chunk item: `document_id` (int), `chunk_id` (int), `text` (string).
+Optional but recommended: `title` (string).
 
 ### Check Sync Status
 ```bash
@@ -233,7 +264,7 @@ No additional configuration needed! The integration uses existing settings:
 
 - **Minimal**: Sync happens after FAISS operations
 - **Non-blocking**: Failed syncs don't break indexing
-- **Best-effort**: Logged but doesn't halt pipeline
+- **Best-effort / eventual consistency**: FAISS does not provide ACID transactions and there is no 2PC across FAISS and PostgreSQL
 - **Fast**: Batch inserts with SQLAlchemy
 
 ## Testing
@@ -248,6 +279,24 @@ pytest tests/test_vectors_api.py
 
 ---
 
-**Status**: ✅ Fully Integrated and Production Ready
+**Status**: ✅ Integrated - Review deployment checklist
+
+### Consistency & Atomicity
+- Current model is eventually consistent with best-effort sync between FAISS and PostgreSQL.
+- True cross-store atomicity is not implemented (no distributed transaction mechanism).
+
+### Authentication & Authorization
+- Protect `/vectors/sync` and `/vectors/document/{id}` behind authenticated service routes.
+- Restrict destructive operations to admin/service identities only.
+
+### Error Handling & Monitoring
+- Surface sync failures in logs/metrics and retry with bounded backoff where appropriate.
+- Track divergence indicators (FAISS count vs DB metadata count) and alert on sustained mismatch.
+
+### Sync Failure Runbook
+1. Detect mismatch via `/vectors/stats` and operational metrics.
+2. Triage recent indexing/deletion logs for failed sync attempts.
+3. Re-run controlled metadata sync from `data/metadata.json`.
+4. Re-verify counts and sample retrievals before resuming normal write traffic.
 
 The hybrid storage system is now active and synchronizing vector metadata to PostgreSQL!

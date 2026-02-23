@@ -4,7 +4,7 @@ from models.conversation import Conversation
 from utils.logger import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = get_logger("backend.utils.chat_persistence")
 
@@ -58,20 +58,22 @@ async def save_chat_turn(
         
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found or access denied for user {user_id}")
+
+        timestamp = datetime.now(timezone.utc)
         
         user_chat = ChatHistory(
             user_id=user_id,
             conversation_id=conversation_id,
             role="user",
             content=user_message,
-            created_at=datetime.utcnow()
+            created_at=timestamp
         )
         assistant_chat = ChatHistory(
             user_id=user_id,
             conversation_id=conversation_id,
             role="assistant",
             content=assistant_response,
-            created_at=datetime.utcnow()
+            created_at=timestamp
         )
         
         db.add(user_chat)
@@ -80,7 +82,7 @@ async def save_chat_turn(
         # Update conversation title on first message (only once - don't override user edits)
         if conversation.title == "New Conversation":
             conversation.title = user_message[:40] + ("..." if len(user_message) > 40 else "")
-            conversation.updated_at = datetime.utcnow()
+            conversation.updated_at = timestamp
         
         await db.commit()
         

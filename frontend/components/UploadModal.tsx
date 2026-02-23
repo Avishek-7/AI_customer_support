@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type UploadModalProps = {
   isOpen: boolean;
@@ -15,6 +15,8 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const uploadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -27,6 +29,11 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
     const token = getToken();
     if (!file || !title.trim() || !token) return;
 
+    if (!API_BASE) {
+      setError("API base URL is not configured");
+      return;
+    }
+
     setUploading(true);
     setError(null);
 
@@ -35,11 +42,21 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
     formData.append("file", file);
 
     try {
+      uploadAbortRef.current?.abort();
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+
+      const controller = new AbortController();
+      uploadAbortRef.current = controller;
+      uploadTimeoutRef.current = setTimeout(() => controller.abort(), 30000);
+
       const res = await fetch(`${API_BASE}/documents/upload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal: controller.signal,
         body: formData,
       });
 
@@ -63,9 +80,16 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
       onUploadComplete();
       onClose();
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Upload failed";
+      const errorMessage = err instanceof Error
+        ? (err.name === "AbortError" ? "Upload timed out. Please try again." : err.message)
+        : "Upload failed";
       setError(errorMessage);
     } finally {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+        uploadTimeoutRef.current = null;
+      }
+      uploadAbortRef.current = null;
       setUploading(false);
     }
   };
@@ -90,7 +114,7 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
       if (droppedFile.type === "application/pdf") {
         setFile(droppedFile);
         if (!title) {
-          setTitle(droppedFile.name.replace(".pdf", ""));
+          setTitle(droppedFile.name.replace(/\.pdf$/i, ""));
         }
       } else {
         setError("Only PDF files are allowed");
@@ -103,19 +127,34 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
       if (!title) {
-        setTitle(selectedFile.name.replace(".pdf", ""));
+        setTitle(selectedFile.name.replace(/\.pdf$/i, ""));
       }
     }
   };
 
   const handleClose = () => {
     if (!uploading) {
+      uploadAbortRef.current?.abort();
+      uploadAbortRef.current = null;
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+        uploadTimeoutRef.current = null;
+      }
       setTitle("");
       setFile(null);
       setError(null);
       onClose();
     }
   };
+
+  useEffect(() => {
+    return () => {
+      uploadAbortRef.current?.abort();
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 

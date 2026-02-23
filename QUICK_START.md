@@ -131,8 +131,19 @@ curl http://localhost:8000/vectors/stats  # PostgreSQL
 ### Problem: Import errors
 ```bash
 # Restart both services
-pkill -f uvicorn
-# Then start them again
+For production, use a process manager (`systemd`, `supervisor`, or `pm2`) instead of manual PID handling.
+
+# Start with PID files
+uvicorn backend.main:app --reload --port 8000 & echo $! > /tmp/backend_uvicorn.pid
+uvicorn ai_engine.app:app --reload --port 9000 & echo $! > /tmp/ai_engine_uvicorn.pid
+
+# Restart safely using PID files
+kill "$(cat /tmp/backend_uvicorn.pid)" "$(cat /tmp/ai_engine_uvicorn.pid)"
+
+# Alternative (port-targeted)
+lsof -ti:8000 | xargs kill
+lsof -ti:9000 | xargs kill
+./setup_async.sh
 ```
 
 ---

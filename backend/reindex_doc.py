@@ -3,6 +3,8 @@
 import asyncio
 import httpx
 import sys
+import os
+import json
 from sqlalchemy import text
 from core.database import AsyncSessionLocal
 
@@ -20,25 +22,41 @@ async def trigger_indexing(doc_id: int):
             return False
             
         document_id, title, content = doc
+            content = content or ""
+            base_url = os.getenv("REINDEX_SERVICE_URL", "http://localhost:9000").rstrip("/")
         print(f'Found document: ID={document_id}, Title={title}')
         print(f'Content length: {len(content)} characters')
         print(f'Triggering indexing to AI engine...')
         
         # Call AI engine to index
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                'http://localhost:9000/index-document',
-                json={
-                    'document_id': document_id,
-                    'title': title,
-                    'content': content
-                }
-            )
+                try:
+                    response = await client.post(
+                        f'{base_url}/index-document',
+                        json={
+                            'document_id': document_id,
+                            'title': title,
+                            'content': content
+                        }
+                    )
+                    response.raise_for_status()
+                except httpx.TimeoutException as e:
+                    print(f'✗ Indexing timeout for document {document_id} ({title}): {e}')
+                    return False
+                except httpx.RequestError as e:
+                    print(f'✗ Request error for document {document_id} ({title}): {e}')
+                    return False
+                except httpx.HTTPStatusError as e:
+                    print(f'✗ Indexing failed for document {document_id} ({title}): {e.response.status_code} {e.response.text}')
+                    return False
             
-            if response.status_code == 200:
-                result_data = response.json()
+                if response.status_code == 200:
+                    try:
+                        result_data = response.json()
+                    except json.JSONDecodeError:
+                        result_data = {}
                 print(f'✓ Successfully indexed!')
-                print(f'  Chunks indexed: {result_data.get("chunks_indexed")}')
+                    print(f'  Chunks indexed: {result_data.get("chunks_indexed", 0)}')
                 
                 # Update database status
                 await session.execute(
@@ -48,7 +66,7 @@ async def trigger_indexing(doc_id: int):
                 await session.commit()
                 print(f'✓ Database updated')
                 return True
-            else:
+
                 print(f'✗ Indexing failed: {response.status_code}')
                 print(response.text)
                 return False

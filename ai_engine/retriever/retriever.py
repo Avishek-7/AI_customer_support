@@ -1,4 +1,5 @@
 from typing import List, Optional
+import asyncio
 from pydantic import Field
 
 from langchain_core.retrievers import BaseRetriever
@@ -82,5 +83,4 @@ class FAISSRetriever(BaseRetriever):
     
     # ---- Asynchronous retrieval ----
     async def _aget_relevant_documents(self, query: str) -> List[Document]:
-        # Just call synchronous version for now
-        return self._get_relevant_documents(query)
+        return await asyncio.to_thread(self._get_relevant_documents, query)

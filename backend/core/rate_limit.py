@@ -1,4 +1,5 @@
 import time
+import threading
 from redis import Redis
 from fastapi import HTTPException
 from utils.logger import get_logger
@@ -9,7 +10,12 @@ logger = get_logger("backend.core.rate_limit")
 
 # Initialize Redis with connection pool
 try:
-    redis = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
+    redis = Redis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=1,
+        socket_timeout=2,
+    )
     # Test connection
     redis.ping()
     REDIS_AVAILABLE = True
@@ -17,30 +23,105 @@ try:
 except Exception as e:
     REDIS_AVAILABLE = False
     redis = None
-    logger.warning(f"Redis not available - rate limiting disabled: {e}")
+    logger.warning(f"Redis not available - using in-memory limiter fallback: {e}")
 
-def rate_limit(user_id: int, limit=100, window=60):
-    """
-    Rate limit requests per user.
-    If Redis is not available, this function becomes a no-op (graceful degradation).
-    """
-    if not REDIS_AVAILABLE or redis is None:
-        # Gracefully degrade - log warning but don't block requests
-        logger.debug(f"Rate limit check skipped (Redis unavailable) for user {user_id}")
-        return
-    
+_IN_MEMORY_LIMITS = {}
+_IN_MEMORY_LIMITS_LOCK = threading.Lock()
+_REDIS_FAIL_COUNT = 0
+_REDIS_CIRCUIT_OPEN_UNTIL = 0.0
+_REDIS_CIRCUIT_THRESHOLD = 3
+_REDIS_CIRCUIT_SECONDS = 30
+
+_ATOMIC_INCR_EXPIRE_SCRIPT = None
+if REDIS_AVAILABLE and redis is not None:
     try:
-        key = f"rate:{user_id}"
-        count = redis.incr(key)
-        if count == 1:
-            redis.expire(key, window)
+        _ATOMIC_INCR_EXPIRE_SCRIPT = redis.register_script(
+            """
+            local current = redis.call('INCR', KEYS[1])
+            if current == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            return current
+            """
+        )
+    except Exception as e:
+        logger.warning(f"Failed to register Redis rate-limit script: {e}")
+        _ATOMIC_INCR_EXPIRE_SCRIPT = None
+
+
+def _in_memory_rate_limit(key: str, limit: int, window: int):
+    """Thread-safe in-memory fallback rate limiter."""
+    now = time.time()
+    with _IN_MEMORY_LIMITS_LOCK:
+        state = _IN_MEMORY_LIMITS.get(key)
+        if state is None or now >= state["expires_at"]:
+            _IN_MEMORY_LIMITS[key] = {"count": 1, "expires_at": now + window}
+            count = 1
+        else:
+            state["count"] += 1
+            count = state["count"]
+
+    if count > limit:
+        logger.warning(f"In-memory rate limit exceeded", extra={"key": key, "count": count, "limit": limit})
+        raise ErrorHandler.rate_limited("You have exceeded the rate limit. Please try again later.")
+
+
+def rate_limit_key(key: str, limit=100, window=60):
+    """
+    Rate limit requests by an arbitrary key.
+    Uses Redis atomic INCR+EXPIRE when available, otherwise in-memory fallback.
+    """
+    global _REDIS_FAIL_COUNT, _REDIS_CIRCUIT_OPEN_UNTIL
+
+    now = time.time()
+    if (not REDIS_AVAILABLE or redis is None) or now < _REDIS_CIRCUIT_OPEN_UNTIL:
+        if now < _REDIS_CIRCUIT_OPEN_UNTIL:
+            logger.warning("Redis circuit breaker open, using in-memory limiter", extra={"key": key})
+        try:
+            _in_memory_rate_limit(key=key, limit=limit, window=window)
+            return
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"In-memory rate limiter failure: {e}", extra={"key": key})
+            raise ErrorHandler.service_unavailable("Rate limiting service temporarily unavailable")
+
+    try:
+        if _ATOMIC_INCR_EXPIRE_SCRIPT is not None:
+            count = int(_ATOMIC_INCR_EXPIRE_SCRIPT(keys=[key], args=[window]))
+        else:
+            # Fallback path if script registration failed
+            count = redis.incr(key)
+            if count == 1:
+                redis.expire(key, window)
+
         if count > limit:
-            logger.warning(f"Rate limit exceeded", extra={"user_id": user_id, "count": count, "limit": limit})
+            logger.warning(f"Rate limit exceeded", extra={"key": key, "count": count, "limit": limit})
             raise ErrorHandler.rate_limited("You have exceeded the rate limit. Please try again later.")
+
+        _REDIS_FAIL_COUNT = 0
     except HTTPException:
-        # Re-raise HTTP exceptions (actual rate limit violations)
         raise
     except Exception as e:
-        # Log error but don't block the request
-        logger.error(f"Rate limit check failed: {e}", extra={"user_id": user_id})
-        # Graceful degradation - allow request to proceed
+        _REDIS_FAIL_COUNT += 1
+        if _REDIS_FAIL_COUNT >= _REDIS_CIRCUIT_THRESHOLD:
+            _REDIS_CIRCUIT_OPEN_UNTIL = time.time() + _REDIS_CIRCUIT_SECONDS
+            logger.warning("Opening Redis rate-limit circuit breaker", extra={
+                "open_seconds": _REDIS_CIRCUIT_SECONDS,
+                "failure_count": _REDIS_FAIL_COUNT,
+            })
+
+        logger.error(f"Rate limit check failed: {e}", extra={"key": key})
+        try:
+            _in_memory_rate_limit(key=key, limit=limit, window=window)
+        except HTTPException:
+            raise
+        except Exception as fallback_error:
+            logger.error(f"In-memory fallback limiter failure: {fallback_error}", extra={"key": key})
+            raise ErrorHandler.service_unavailable("Rate limiting service temporarily unavailable")
+
+def rate_limit(user_id: str | int, limit=100, window=60):
+    """
+    Rate limit requests per identifier.
+    """
+    rate_limit_key(key=f"rate:{user_id}", limit=limit, window=window)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { docsLogger } from "@/lib/logger";
 import {
@@ -35,6 +35,7 @@ export default function DocumentsPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [reindexing, setReindexing] = useState<number | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -53,6 +54,14 @@ export default function DocumentsPage() {
       const res = await fetch(`${API_BASE}/documents/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) {
+        const errorText = await res.text();
+        docsLogger.error("Failed to fetch documents", {
+          status: res.status,
+          response: errorText,
+        });
+        throw new Error(`Failed to fetch documents (${res.status})`);
+      }
       const data = await res.json();
       docsLogger.info("Documents fetched", { count: data.documents?.length || 0 });
       setDocs(data.documents ?? []);
@@ -137,9 +146,14 @@ export default function DocumentsPage() {
     const token = getToken();
     if (!token) return;
 
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
     docsLogger.info("Starting index status polling", { docId });
 
-    const interval = setInterval(async () => {
+    pollingIntervalRef.current = setInterval(async () => {
       try {
         const status = await getDocumentStatus(docId, token);
 
@@ -150,7 +164,10 @@ export default function DocumentsPage() {
 
         if (status.status === "completed") {
           docsLogger.info("Document indexing completed", { docId, chunkCount: status.chunk_count });
-          clearInterval(interval);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
           setIndexStatus(null);
           setChunkCount(null);
           await fetchDocs();
@@ -158,7 +175,10 @@ export default function DocumentsPage() {
 
         if (status.status === "failed") {
           docsLogger.error("Document indexing failed", { docId });
-          clearInterval(interval);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
           setError("Document indexing failed");
           setIndexStatus(null);
           setChunkCount(null);
@@ -169,6 +189,15 @@ export default function DocumentsPage() {
       }
     }, 2000); // Poll every 2 seconds
   };
+
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Handle document search
   const handleSearch = async (e: React.FormEvent) => {
@@ -386,7 +415,8 @@ export default function DocumentsPage() {
                     <p className="text-xs text-gray-400 mt-1">ID: {doc.id}</p>
                     {doc.index_status && (
                       <p className="text-xs text-blue-400 mt-1">
-                        Status: {doc.index_status} ({doc.chunk_count} chunks)
+                        Status: {doc.index_status}
+                        {doc.chunk_count != null ? ` (${doc.chunk_count} chunks)` : ""}
                       </p>
                     )}
                     <p className="text-sm text-gray-300 mt-2 line-clamp-2">{doc.content}</p>
@@ -410,10 +440,21 @@ export default function DocumentsPage() {
                           const token = getToken();
                           if (token && confirm("Delete this document?")) {
                             try {
-                              await fetch(`${API_BASE}/documents/${doc.id}`, {
+                              const res = await fetch(`${API_BASE}/documents/${doc.id}`, {
                                 method: "DELETE",
                                 headers: { Authorization: `Bearer ${token}` },
                               });
+                              if (!res.ok) {
+                                const responseText = await res.text();
+                                console.error("Failed to delete document", {
+                                  docId: doc.id,
+                                  status: res.status,
+                                  response: responseText,
+                                });
+                                setError(`Failed to delete document (${res.status})`);
+                                return;
+                              }
+                              console.log("Document deleted", { docId: doc.id });
                               await fetchDocs();
                             } catch (err) {
                               setError("Failed to delete document");

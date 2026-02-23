@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminUsers, createUser, deleteUser } from "@/lib/api";
@@ -19,6 +19,8 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUserData, setNewUserData] = useState({
     email: "",
@@ -32,28 +34,34 @@ export default function AdminUsersPage() {
     return localStorage.getItem("token");
   };
 
-  useEffect(() => {
-    const loadUsers = async () => {
-      const token = getToken();
-      if (!token) {
-        router.push("/login");
-        return;
-      }
+  const reloadUsers = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
-      try {
-        const data = await getAdminUsers(token);
-        setUsers(data || []);
-      } catch (err) {
-        console.error("Failed to load users:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadUsers();
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAdminUsers(token);
+      setUsers(data || []);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || "Failed to load users");
+      setUsers([]);
+      console.error("Failed to load users:", err);
+    } finally {
+      setLoading(false);
+    }
   }, [router]);
 
+  useEffect(() => {
+    reloadUsers();
+  }, [reloadUsers]);
+
   const handleCreateUser = async () => {
+    if (isCreating) return;
     const token = getToken();
     if (!token) return;
 
@@ -62,6 +70,7 @@ export default function AdminUsersPage() {
       return;
     }
 
+    setIsCreating(true);
     try {
       await createUser(token, newUserData);
       const data = await getAdminUsers(token);
@@ -70,6 +79,8 @@ export default function AdminUsersPage() {
       setNewUserData({ email: "", password: "", name: "", role: "user" });
     } catch (err) {
       alert("Failed to create user: " + String(err));
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -110,28 +121,37 @@ export default function AdminUsersPage() {
           <div className="bg-gray-800 p-6 rounded-lg mb-8">
             <h2 className="text-xl font-bold mb-4">Create New User</h2>
             <div className="space-y-4">
+              <label htmlFor="new-user-email" className="block text-sm font-medium">Email</label>
               <input
+                id="new-user-email"
                 type="email"
                 placeholder="Email"
                 value={newUserData.email}
                 onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
                 className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400"
               />
+              <label htmlFor="new-user-name" className="block text-sm font-medium">Full Name</label>
               <input
+                id="new-user-name"
                 type="text"
                 placeholder="Full Name (optional)"
                 value={newUserData.name}
                 onChange={(e) => setNewUserData({ ...newUserData, name: e.target.value })}
                 className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400"
               />
+              <label htmlFor="new-user-password" className="block text-sm font-medium">Password</label>
               <input
+                id="new-user-password"
                 type="password"
+                autoComplete="new-password"
                 placeholder="Password"
                 value={newUserData.password}
                 onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
                 className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white placeholder-gray-400"
               />
+              <label htmlFor="new-user-role" className="block text-sm font-medium">Role</label>
               <select
+                id="new-user-role"
                 value={newUserData.role}
                 onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
                 className="w-full px-3 py-2 rounded bg-gray-700 border border-gray-600 text-white"
@@ -142,9 +162,10 @@ export default function AdminUsersPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleCreateUser}
+                  disabled={isCreating}
                   className="px-4 py-2 rounded bg-green-600 hover:bg-green-700 font-semibold"
                 >
-                  Create
+                  {isCreating ? "Creating..." : "Create"}
                 </button>
                 <button
                   onClick={() => setShowCreateForm(false)}
@@ -162,6 +183,14 @@ export default function AdminUsersPage() {
           <p>Loading...</p>
         ) : (
           <div className="bg-gray-800 rounded-lg overflow-hidden">
+            {error && (
+              <div className="px-4 py-3 text-sm text-red-300 bg-red-950/50 border-b border-red-800">
+                <p>{error}</p>
+                <button onClick={reloadUsers} className="mt-2 rounded bg-red-700 px-3 py-1 text-xs font-semibold hover:bg-red-600">
+                  Retry
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-700">

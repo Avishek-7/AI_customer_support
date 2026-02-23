@@ -17,6 +17,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -42,8 +43,9 @@ export default function ProfilePage() {
 
       authLogger.info("Loading user profile");
       try {
+        setError(null);
         const response = await getCurrentUser(token);
-        if (response.id) {
+        if (response?.id) {
           setUser(response);
           setFormData({
             name: response.name || "",
@@ -52,8 +54,11 @@ export default function ProfilePage() {
             confirmPassword: "",
           });
           authLogger.info("User profile loaded", { userId: response.id });
+        } else {
+          setError("Invalid profile response");
         }
       } catch (err) {
+        setError("Failed to load profile");
         authLogger.error("Failed to load user profile", { error: String(err) });
       } finally {
         setLoading(false);
@@ -79,13 +84,16 @@ export default function ProfilePage() {
       return;
     }
 
+    const trimmedName = formData.name.trim();
+    const trimmedEmail = formData.email.trim();
+
     setLoading(true);
     authLogger.info("Updating user profile", { userId: user.id });
 
     try {
       const updateData: Record<string, unknown> = {
-        name: formData.name,
-        email: formData.email,
+        name: trimmedName,
+        email: trimmedEmail,
       };
 
       if (formData.password) {
@@ -97,6 +105,8 @@ export default function ProfilePage() {
         setUser(response);
         setFormData({
           ...formData,
+          name: trimmedName,
+          email: trimmedEmail,
           password: "",
           confirmPassword: "",
         });
@@ -121,6 +131,20 @@ export default function ProfilePage() {
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
           <p>Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if ((!loading && !user) || error) {
+    return (
+      <div className="flex flex-col min-h-screen bg-gray-900 text-white">
+        <Navigation />
+        <div className="flex-1 p-6">
+          <div className="max-w-md mx-auto bg-gray-800 rounded-lg p-8">
+            <h1 className="text-2xl font-bold mb-4">Profile</h1>
+            <p className="text-red-300">{error || "Unable to load profile"}</p>
+          </div>
         </div>
       </div>
     );
@@ -180,8 +204,9 @@ export default function ProfilePage() {
         ) : (
           <form onSubmit={handleSave} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Name</label>
+              <label htmlFor="profile-name" className="block text-sm font-medium mb-2">Name</label>
               <input
+                id="profile-name"
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -190,8 +215,9 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
+              <label htmlFor="profile-email" className="block text-sm font-medium mb-2">Email</label>
               <input
+                id="profile-email"
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -200,8 +226,9 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">New Password (optional)</label>
+              <label htmlFor="profile-password" className="block text-sm font-medium mb-2">New Password (optional)</label>
               <input
+                id="profile-password"
                 type="password"
                 placeholder="Leave blank to keep current password"
                 value={formData.password}
@@ -211,8 +238,9 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Confirm Password</label>
+              <label htmlFor="profile-confirm-password" className="block text-sm font-medium mb-2">Confirm Password</label>
               <input
+                id="profile-confirm-password"
                 type="password"
                 placeholder="Confirm new password"
                 value={formData.confirmPassword}

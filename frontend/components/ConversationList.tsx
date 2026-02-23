@@ -78,6 +78,14 @@ export default function ConversationList({
                       type="text"
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSaveEdit(conv.id);
+                        } else if (e.key === "Escape") {
+                          setEditingId(null);
+                        }
+                      }}
                       autoFocus
                       className="flex-1 bg-gray-600 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />

@@ -28,9 +28,14 @@ class Settings(BaseSettings):
     # Email / SMTP settings
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 1025
+    SMTP_TIMEOUT: int = 10
+    SMTP_USE_TLS: bool = True
     SMTP_USER: Optional[str] = None
     SMTP_PASS: Optional[str] = None
-    SMTP_FROM: str = "MeetingIntel <no-reply@local.test>"
+    SMTP_FROM: str = "AI Customer Support Backend <no-reply@local.test>"
+
+    # Internal service authentication (AI engine -> backend callbacks)
+    INTERNAL_API_KEY: str = "dev-internal-api-key"
 
     class Config:
         env_file = ".env"

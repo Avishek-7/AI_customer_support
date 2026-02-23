@@ -4,6 +4,8 @@
 > **Last Updated**: January 12, 2026  
 > **Base URL**: `http://localhost:8000`
 
+> ⚠️ Security: `http://localhost:8000` is for local development only. Production deployments must use HTTPS.
+
 This document defines the complete API contract for the AI Customer Support backend. Use this as the source of truth for frontend development and API integration.
 
 ---
@@ -136,8 +138,14 @@ Request a password reset.
 }
 ```
 
+> ⚠️ **NOT IMPLEMENTED WARNING**: Email delivery for forgot-password must be treated as non-production until verified end-to-end.
+
+**TODO**
+- Track implementation/verification status in an issue or PR before relying on email delivery in production: https://github.com/Avishek-7/AI_customer_support/issues/new
+- Expected behavior: generate token, persist token state, and send reset email through configured SMTP provider.
+
 **Side Effects:**
-- Generates reset token (not actually sent via email in current implementation)
+- NOT IMPLEMENTED: reset token is generated but emails are not sent
 
 **Error Responses:**
 - `404`: User not found
@@ -226,7 +234,7 @@ Send a message and receive a complete response (non-streaming).
 | `message` | string | ✅ | - | User's question |
 | `conversation_id` | integer | ✅ | - | ID of existing conversation |
 | `system_prompt` | string | ❌ | "You are an AI customer support assistant." | Custom system prompt |
-| `document_ids` | integer[] | ❌ | `null` (searches all) | Specific documents to search |
+| `document_ids` | integer[] \| null | ❌ | `null` (searches all) | Specific documents to search |
 
 **Response (200):**
 ```json
@@ -359,15 +367,27 @@ Get all conversations for current user.
 |----------|-------|
 | Auth Required | ✅ Yes |
 
+**Query Parameters:**
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `limit` | integer | ❌ | `50` | Number of conversations to return (`1-100`) |
+| `offset` | integer | ❌ | `0` | Number of conversations to skip for pagination |
+
 **Response (200):**
 ```json
 {
+  "total": 120,
+  "limit": 50,
+  "offset": 0,
   "conversations": [
     {
       "id": 1,
       "user_id": 123,
       "title": "Password Help",
-      "created_at": "2026-01-12T10:30:00"
+      "created_at": "2026-01-12T10:30:00",
+      "updated_at": "2026-01-12T10:32:00",
+      "message_count": 4,
+      "last_message_preview": "To reset your password..."
     }
   ]
 }
@@ -498,7 +518,7 @@ Upload and index a PDF document.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `title` | string | ✅ | Document title |
-| `file` | file (PDF) | ✅ | PDF file to upload |
+| `file` | file (PDF) | ✅ | PDF file to upload (max 10MB) |
 
 **Response (200):**
 ```json
@@ -716,7 +736,12 @@ Update document indexing status (called by AI engine).
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No (internal use) |
+| Auth Required | ✅ Yes (service-to-service) |
+
+**Security:**
+- Required header: `X-Internal-API-Key: <internal_service_key>`
+- Caller must run on internal/trusted network (private network or service mesh)
+- Obtain the key from backend service configuration (`INTERNAL_API_KEY`) and provision it as a secret in the AI engine deployment
 
 **Request Body:**
 ```json
@@ -993,10 +1018,25 @@ List all documents across all users.
 | Auth Required | ✅ Yes |
 | Role Required | `admin` |
 
+**Query Parameters:**
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `page` | integer | ❌ | `1` | 1-based page number |
+| `per_page` | integer | ❌ | `50` | Page size (`1-200`) |
+
+**Example request:**
+```http
+GET /admin/documents?page=2&per_page=25
+Authorization: Bearer <admin_token>
+```
+
 **Response (200):**
 ```json
 {
+  "page": 2,
+  "per_page": 25,
   "total": 450,
+  "returned_count": 25,
   "documents": [
     {
       "id": 1,
@@ -1108,7 +1148,11 @@ Sync vector metadata from FAISS to PostgreSQL.
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No (internal use) |
+| Auth Required | ✅ Yes (service-to-service) |
+
+**Security:**
+- Required header: `X-Internal-API-Key: <internal_service_key>`
+- Restricted to internal network callers only (private IP/VPC)
 
 **Request Body:**
 ```json
@@ -1140,7 +1184,11 @@ Delete vector metadata for a document.
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No (internal use) |
+| Auth Required | ✅ Yes (service-to-service) |
+
+**Security:**
+- Required header: `X-Internal-API-Key: <internal_service_key>`
+- Restricted to internal network callers only (private IP/VPC)
 
 **Response (200):**
 ```json
@@ -1159,7 +1207,11 @@ Get vector metadata for a document (debug).
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No |
+| Auth Required | ✅ Yes (service-to-service) |
+
+**Security:**
+- Required header: `X-Internal-API-Key: <internal_service_key>`
+- Returns `401` for missing/invalid key
 
 **Response (200):**
 ```json
@@ -1187,7 +1239,11 @@ Get vector storage statistics.
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No |
+| Auth Required | ✅ Yes (service-to-service) |
+
+**Security:**
+- Required header: `X-Internal-API-Key: <internal_service_key>`
+- Returns `401` for missing/invalid key
 
 **Response (200):**
 ```json

@@ -16,10 +16,11 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
     """
     if not answer or not sources:
         return {
-            "hallucination_score": 0.0,
-            "alignment_score": 0.0,
+                "hallucination_score": None,
+                "alignment_score": None,
+                "computable": False,
             "details": {
-                "reason": "No answer or sources to compare",
+                    "reason": "No answer or sources to compare",
                 "risk_level": "low"
             }
         }
@@ -71,6 +72,7 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
     return {
         "hallucination_score": round(hallucination_score, 3),
         "alignment_score": round(alignment_score, 3),
+            "computable": True,
         "details": {
             "max_source_similarity": round(max_similarity, 3),
             "avg_source_similarity": round(avg_similarity, 3),

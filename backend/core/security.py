@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from core.database import get_db
@@ -14,7 +14,7 @@ logger = get_logger("backend.core.security")
 import bcrypt
 
 # OAuth2 scheme (reads Authorization: Bearer <token> header)
-oauth_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 # ------ Password Hashing -----
 def hash_password(password: str) -> str:
@@ -62,7 +62,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # ------ JWT Token creation -----
 def create_access_token(data: dict) -> str:
-    """Crate a JWT access token with expiry."""
+    """Create a JWT access token with expiry."""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(
         minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -94,11 +94,11 @@ def decode_access_token(token: str) -> Optional[str]:
         logger.warning("Token expired")
         return None
     except JWTError as e:
-        logger.warning(f"Token decode failed", extra={"error": str(e), "token_preview": token[:20] + "..." if len(token) > 20 else token})
+        logger.warning("Token decode failed", extra={"error": str(e)})
         return None
     
 # ------ Get Current User -----
-async def get_current_user(token: str = Depends(oauth_scheme), db = Depends(get_db)):
+async def get_current_user(request: Request, token: str | None = Depends(oauth_scheme), db = Depends(get_db)):
     """
     Dependency used in protected routes.
     - Reads JWT from Authorization header.
@@ -115,7 +115,12 @@ async def get_current_user(token: str = Depends(oauth_scheme), db = Depends(get_
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    user_id = decode_access_token(token)
+    user_id = decode_access_token(token) if token else None
+    if user_id is None:
+        cookie_token = request.cookies.get("access_token")
+        if cookie_token:
+            user_id = decode_access_token(cookie_token)
+
     if user_id is None:
         logger.warning(f"Authentication failed - invalid token")
         raise credential_exception

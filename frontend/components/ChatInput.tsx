@@ -14,6 +14,7 @@ export default function ChatInput({ onSend }: { onSend: (msg: string) => void })
   return (
     <div className="flex gap-2">
       <textarea
+        aria-label="Chat input"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

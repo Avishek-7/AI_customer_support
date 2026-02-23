@@ -35,7 +35,12 @@ export default function AdminDebugPage() {
     setDebugData(null);
 
     try {
-      const data = await getAdminConversationDebug(parseInt(conversationId), token);
+      const parsedId = Number.parseInt(conversationId, 10);
+      if (!Number.isInteger(parsedId) || Number.isNaN(parsedId) || parsedId <= 0) {
+        setError("Please enter a valid conversation ID");
+        return;
+      }
+      const data = await getAdminConversationDebug(parsedId, token);
       setDebugData(data);
     } catch (err) {
       setError("Failed to load conversation: " + String(err));
@@ -118,19 +123,19 @@ export default function AdminDebugPage() {
                     <div className="bg-gray-700 p-4 rounded">
                       <p className="text-gray-400 text-sm">Confidence</p>
                       <p className="text-2xl font-bold text-green-400">
-                        {(((debugData.debug_info as Record<string, unknown>)?.confidence_score as number) ?? 0 * 100).toFixed(1)}%
+                        {((((debugData.debug_info as Record<string, unknown>)?.confidence_score as number) ?? 0) * 100).toFixed(1)}%
                       </p>
                     </div>
                     <div className="bg-gray-700 p-4 rounded">
                       <p className="text-gray-400 text-sm">Hallucination</p>
                       <p className="text-2xl font-bold text-orange-400">
-                        {(((debugData.debug_info as Record<string, unknown>)?.hallucination_score as number) ?? 0 * 100).toFixed(1)}%
+                        {((((debugData.debug_info as Record<string, unknown>)?.hallucination_score as number) ?? 0) * 100).toFixed(1)}%
                       </p>
                     </div>
                     <div className="bg-gray-700 p-4 rounded">
                       <p className="text-gray-400 text-sm">Alignment</p>
                       <p className="text-2xl font-bold text-purple-400">
-                        {(((debugData.debug_info as Record<string, unknown>)?.alignment_score as number) ?? 0 * 100).toFixed(1)}%
+                        {((((debugData.debug_info as Record<string, unknown>)?.alignment_score as number) ?? 0) * 100).toFixed(1)}%
                       </p>
                     </div>
                     <div className="bg-gray-700 p-4 rounded">

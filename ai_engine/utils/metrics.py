@@ -3,7 +3,7 @@ from prometheus_client import Histogram, generate_latest, CONTENT_TYPE_LATEST
 REQUEST_LATENCY = Histogram(
     "ai_engine_request_latency_seconds",
     "AI engine request latency in seconds",
-    ["path", "method", "status"],
+    ["route", "method", "status"],
 )
 
 RAG_RETRIEVAL_LATENCY = Histogram(

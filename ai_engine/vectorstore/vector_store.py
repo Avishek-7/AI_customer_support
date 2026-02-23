@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 from typing import List, Dict, Any, Tuple, Optional
 import requests
 import numpy as np
@@ -9,9 +10,10 @@ import asyncio
 import threading
 from embeddings.embedder import EMBEDDING_DIM
 from utils.logger import get_logger
-from utils.config import settings
+from utils.config import get_settings
 
 logger = get_logger("ai_engine.vectorstore")
+settings = get_settings()
 
 BACKEND_URL = settings.BACKEND_URL
 
@@ -59,6 +61,11 @@ def load_index_and_metadata() -> Tuple[faiss.IndexFlatL2, List[Dict[str, Any]]]:
 
         # Safety check (FAISS count must match metadata count)
         if index.ntotal != len(metadata):
+            logger.warning(
+                "Index/metadata count mismatch: ntotal=%s, metadata_len=%s, resetting to empty",
+                index.ntotal,
+                len(metadata),
+            )
             index = _empty_index()
             metadata = []
 
@@ -81,8 +88,8 @@ def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, A
         with open(META_PATH, "w", encoding="utf-8") as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
         
-        _INDEX_CACHE = index
-        _META_CACHE = metadata
+        _INDEX_CACHE = faiss.clone_index(index)
+        _META_CACHE = copy.deepcopy(metadata)
     
     # Sync metadata to database (best effort)
     # Always use sync approach since this function is called from sync context
@@ -137,6 +144,11 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
     if embeddings.shape[1] != EMBEDDING_DIM:
         raise ValueError(
             f"Embedding dimension mismatch: got {embeddings.shape[1]}, expected {EMBEDDING_DIM}"   
+        )
+
+    if embeddings.shape[0] != len(metadatas):
+        raise ValueError(
+            f"Embeddings/metadata count mismatch: embeddings.shape[0]={embeddings.shape[0]} vs len(metadatas)={len(metadatas)}"
         )
     
     index.add(embeddings)
@@ -343,10 +355,6 @@ def search_embeddings(
             results_dict[chunk_key] = item
             results.append(item)
         
-        # Stop once we have enough results
-        if len(results) >= k:
-            break
-
     # Sort by score (lower is better for L2 distance)
     results.sort(key=lambda x: x["score"])
     results = results[:k]

@@ -21,7 +21,7 @@ logger = get_logger("ai_engine.app")
 
 app = FastAPI(
     title="AI Engine - RAG Microservice",
-    description="Handles embedding, FAISS reterieval, and LLM generation.",
+    description="Handles embedding, FAISS retrieval, and LLM generation.",
     version="1.0.0"
 )
 
@@ -52,7 +52,7 @@ async def metrics_middleware(request: Request, call_next):
     duration = time.perf_counter() - start_time
     # Use route template pattern for metrics to prevent unbounded cardinality
     route = request.scope.get("route")
-    path_template = route.path if route else request.url.path
+    path_template = getattr(route, "path", request.url.path)
     REQUEST_LATENCY.labels(path_template, request.method, str(response.status_code)).observe(duration)
     return response
 
@@ -169,30 +169,40 @@ async def index_document_endpoint(body: IndexDocumentRequest, background_task: B
     """
     req_id = str(uuid.uuid4())[:8]
     set_request_id(req_id)
-    
-    logger.info(f"Indexing document", extra={
-        "document_id": body.document_id,
-        "title": body.title,
-        "content_length": len(body.content)
-    })
 
-    background_task.add_task(
-        index_document,
-        body.document_id,
-        body.title,
-        body.content
-    )
+    async def safe_index_document_task(task_req_id: str, document_id: int, title: str, content: str):
+        set_request_id(task_req_id)
+        try:
+            await index_document(document_id, title, content)
+        except Exception as e:
+            logger.error("Background index_document failed", extra={
+                "document_id": document_id,
+                "error": str(e)
+            }, exc_info=True)
+        finally:
+            clear_request_id()
 
-    # chunks_indexed = await index_document(
-    #     document_id=body.document_id,
-    #     title=body.title,
-    #     content=body.content
-    # )
+    try:
+        logger.info(f"Indexing document", extra={
+            "document_id": body.document_id,
+            "title": body.title,
+            "content_length": len(body.content)
+        })
 
-    return IndexDocumentResponse(
-        document_id=body.document_id,
-        chunks_indexed=0  # indexing still running
-    )
+        background_task.add_task(
+            safe_index_document_task,
+            req_id,
+            body.document_id,
+            body.title,
+            body.content
+        )
+
+        return IndexDocumentResponse(
+            document_id=body.document_id,
+            chunks_indexed=0  # indexing still running
+        )
+    finally:
+        clear_request_id()
 
 # Query RAG Pipeline
 @app.post("/query", response_model=QueryResponse)
@@ -206,36 +216,38 @@ def query_endpoint(body: QueryRequest):
     """
     req_id = str(uuid.uuid4())[:8]
     set_request_id(req_id)
-    
-    logger.info("Processing query", extra={
-        "query": body.query[:100],
-        "session_id": body.session_id,
-        "document_ids": body.document_ids,
-        "k": body.k
-    })
 
-    result = answer_query(
-        query=body.query,
-        session_id=body.session_id,
-        system_prompt=body.system_prompt,
-        document_ids=body.document_ids,
-        k=body.k,
-    )
-    
-    # Log the full answer for debugging/comparison
-    logger.info("=== AI ENGINE ANSWER ===", extra={
-        "request_id": req_id,
-        "query": body.query,
-        "answer": result["answer"],
-        "answer_length": len(result["answer"]),
-        "sources_count": len(result["sources"])
-    })
-    logger.info(f"[AI_ENGINE_ANSWER] {result['answer'][:500]}..." if len(result["answer"]) > 500 else f"[AI_ENGINE_ANSWER] {result['answer']}")
+    try:
+        logger.info("Processing query", extra={
+            "query": body.query[:100],
+            "session_id": body.session_id,
+            "document_ids": body.document_ids,
+            "k": body.k
+        })
 
-    return QueryResponse(
-        answer=result["answer"],
-        sources=result["sources"]
-    )
+        result = answer_query(
+            query=body.query,
+            session_id=body.session_id,
+            system_prompt=body.system_prompt,
+            document_ids=body.document_ids,
+            k=body.k,
+        )
+
+        logger.info("=== AI ENGINE ANSWER ===", extra={
+            "request_id": req_id,
+            "query": body.query,
+            "answer": result["answer"],
+            "answer_length": len(result["answer"]),
+            "sources_count": len(result["sources"])
+        })
+        logger.info(f"[AI_ENGINE_ANSWER] {result['answer'][:500]}..." if len(result["answer"]) > 500 else f"[AI_ENGINE_ANSWER] {result['answer']}")
+
+        return QueryResponse(
+            answer=result["answer"],
+            sources=result["sources"]
+        )
+    finally:
+        clear_request_id()
 
 # Update Document
 @app.put("/update-document", response_model=IndexDocumentResponse)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional
 
 
@@ -21,7 +21,7 @@ class TokenResponse(BaseModel):
 # -------- Users CRUD Schemas --------
 class UserResponse(BaseModel):
     id: int
-    name: Optional[str] = None
+    full_name: Optional[str] = Field(default=None, alias="name")
     email: EmailStr
     role: str
 
@@ -35,12 +35,34 @@ class UserCreateAdmin(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = "user"  # Only applied if admin creates
 
+    @field_validator("password")
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain a number")
+        return v
+
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
     role: Optional[str] = None  # Admin-only
+
+    @field_validator("password")
+    def validate_password(cls, v):
+        if v is None:
+            return v
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain a number")
+        return v
 
 
 class UserListResponse(BaseModel):

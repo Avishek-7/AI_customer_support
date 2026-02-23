@@ -5,6 +5,15 @@ import Link from "next/link";
 import { forgotPassword } from "@/lib/api";
 import { authLogger } from "@/lib/logger";
 
+async function hashIdentifier(value: string): Promise<string> {
+  const input = value.trim().toLowerCase();
+  if (!input) return "unknown";
+  if (typeof window === "undefined" || !window.crypto?.subtle) return "unavailable";
+  const bytes = new TextEncoder().encode(input);
+  const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,7 +27,8 @@ export default function ForgotPasswordPage() {
     }
 
     setLoading(true);
-    authLogger.info("Forgot password request", { email });
+    const userIdHash = await hashIdentifier(email);
+    authLogger.info("Forgot password request", { userIdHash });
 
     try {
       const response = await forgotPassword(email);
@@ -27,11 +37,14 @@ export default function ForgotPasswordPage() {
           type: "success",
           text: "Password reset instructions have been sent to your email. Check your inbox for a reset link.",
         });
-        authLogger.info("Forgot password request successful", { email });
+        authLogger.info("Forgot password request successful");
         setEmail("");
       } else if (response.detail) {
         setMessage({ type: "error", text: response.detail });
-        authLogger.warn("Forgot password request failed", { email, error: response.detail });
+        authLogger.warn("Forgot password request failed", { error: response.detail });
+      } else {
+        setMessage({ type: "error", text: "Unexpected response from server" });
+        authLogger.warn("Forgot password request returned unexpected response shape", { response: response as unknown as Record<string, unknown> });
       }
     } catch (err) {
       setMessage({ type: "error", text: "An error occurred. Please try again." });

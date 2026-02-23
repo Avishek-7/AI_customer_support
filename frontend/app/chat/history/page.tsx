@@ -14,11 +14,39 @@ export default function ChatHistoryPage() {
   };
 
   useEffect(() => {
-    fetch(`${API_BASE}/chat/history`, {
-      headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-    })
-      .then(res => res.json())
-      .then(data => setHistory(data.history));
+    const run = async () => {
+      if (!API_BASE) {
+        console.error("NEXT_PUBLIC_API_URL is not configured");
+        setHistory([]);
+        return;
+      }
+
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No auth token found");
+        setHistory([]);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/chat/history`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Failed to load chat history (${res.status}): ${errorText}`);
+        }
+
+        const data = await res.json();
+        setHistory(Array.isArray(data?.history) ? data.history : []);
+      } catch (error) {
+        console.error("Failed to fetch chat history:", error);
+        setHistory([]);
+      }
+    };
+
+    run();
   }, []);
 
   return (

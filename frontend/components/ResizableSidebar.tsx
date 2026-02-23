@@ -49,26 +49,26 @@ export default function ResizableSidebar({
     document.body.style.cursor = "auto";
   }
 
-  function onMouseMove(e: MouseEvent) {
-    if (!dragging.current) return;
-
-    if (!sidebarRef.current) return;
-
-    const rect = sidebarRef.current.getBoundingClientRect();
-    let newWidth: number;
-
-    if (side === "left") {
-      newWidth = e.clientX - rect.left;
-    } else {
-      newWidth = rect.right - e.clientX;
-    }
-
-    newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-    setWidth(newWidth);
-  }
-
   // attach global listeners
   useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+
+      if (!sidebarRef.current) return;
+
+      const rect = sidebarRef.current.getBoundingClientRect();
+      let newWidth: number;
+
+      if (side === "left") {
+        newWidth = e.clientX - rect.left;
+      } else {
+        newWidth = rect.right - e.clientX;
+      }
+
+      newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+      setWidth(newWidth);
+    };
+
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousemove", onMouseMove);
 
@@ -76,7 +76,7 @@ export default function ResizableSidebar({
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
     };
-  }, []);
+  }, [maxWidth, minWidth, side]);
 
   return (
     <div
@@ -94,9 +94,9 @@ export default function ResizableSidebar({
         title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {isCollapsed ? (
-          <ChevronRight className="w-5 h-5 text-gray-400" />
+          side === "right" ? <ChevronLeft className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />
         ) : (
-          <ChevronLeft className="w-5 h-5 text-gray-400" />
+          side === "right" ? <ChevronRight className="w-5 h-5 text-gray-400" /> : <ChevronLeft className="w-5 h-5 text-gray-400" />
         )}
       </button>
 

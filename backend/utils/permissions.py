@@ -13,14 +13,14 @@ async def get_conversation(
         user: User
 ) -> Conversation:
     result = await db.execute(
-        select(Conversation).filter(Conversation.id == convo_id)
+        select(Conversation).filter(
+            Conversation.id == convo_id,
+            Conversation.user_id == user.id,
+        )
     )
     convo = result.scalar_one_or_none()
 
     if not convo:
-        raise ErrorHandler.not_found("Conversation not found")
-    
-    if convo.user_id != user.id:
         raise ErrorHandler.forbidden("You do not have permission to access this conversation")
     
     return convo

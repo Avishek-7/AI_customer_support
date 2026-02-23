@@ -75,21 +75,35 @@ async def index_document_task(document_id: int) -> None:
                 f"AI engine indexing failed",
                 extra={"document_id": document_id, "status": e.response.status_code}
             )
-            await db.execute(
-                update(Document)
-                .where(Document.id == document_id)
-                .values(index_status="failed")
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == document_id)
+                    .values(index_status="failed")
+                )
+                await db.commit()
+            except Exception as db_error:
+                await db.rollback()
+                logger.error("Failed to update document status after HTTPStatusError", extra={
+                    "document_id": document_id,
+                    "error": str(db_error),
+                }, exc_info=True)
             
         except Exception as e:
             logger.error(
                 f"Document indexing failed",
                 extra={"document_id": document_id, "error": str(e)}
             )
-            await db.execute(
-                update(Document)
-                .where(Document.id == document_id)
-                .values(index_status="failed")
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == document_id)
+                    .values(index_status="failed")
+                )
+                await db.commit()
+            except Exception as db_error:
+                await db.rollback()
+                logger.error("Failed to update document status after general failure", extra={
+                    "document_id": document_id,
+                    "error": str(db_error),
+                }, exc_info=True)

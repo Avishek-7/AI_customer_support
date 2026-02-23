@@ -34,9 +34,7 @@ def get_memory(session_id: str) -> InMemoryChatHistory:
     
     Creates one if it doesn't exist.
     """
-    if session_id not in memory_store:
-        memory_store[session_id] = InMemoryChatHistory()
-    return memory_store[session_id]
+    return memory_store.setdefault(session_id, InMemoryChatHistory())
 
 
 def save_turn(session_id: str, user_message: str | None = None, ai_message: str | None = None) -> None:
@@ -46,7 +44,7 @@ def save_turn(session_id: str, user_message: str | None = None, ai_message: str 
     - Optional helper to persist turns outside chains.
     """
     mem = get_memory(session_id)
-    if user_message:
+    if user_message is not None:
         mem.add_user_message(user_message)
-    if ai_message:
+    if ai_message is not None:
         mem.add_ai_message(ai_message)

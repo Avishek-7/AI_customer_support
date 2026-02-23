@@ -1,12 +1,12 @@
 from typing import List, Dict, Any, Optional
 from embeddings.embedder import embed_texts, embed_text
-from vectorstore.vector_store import add_embeddings, delete_document, search_embeddings
+from vectorstore.vector_store import add_embeddings, delete_document, search_embeddings, load_index_and_metadata, rebuild_index
 from rag.chunker import chunk_text
 from llm.llm import generate_answer, stream_llm_answer
 from llm.memory import get_memory, save_turn
 from retriever.retriever import FAISSRetriever
 from retriever.rerank import mmr
-from utils.config import settings
+from utils.config import get_settings
 from utils.metrics import (
     RAG_RETRIEVAL_LATENCY,
     RAG_RERANK_LATENCY,
@@ -22,6 +22,7 @@ import numpy as np
 import time
 
 logger = get_logger("ai_engine.pipeline")
+settings = get_settings()
 
 BACKEND_URL = settings.BACKEND_URL
 
@@ -36,6 +37,7 @@ async def update_status(document_id: int, status: str, chunk_count: int = None):
                     "status": status,
                     "chunk_count": chunk_count,
                 },
+                headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                 timeout=5.0
             )
             logger.debug(f"Status updated", extra={"document_id": document_id, "status": status})
@@ -62,37 +64,46 @@ async def index_document(
     # Step 0: Notify backend
     await update_status(document_id, "processing")
 
+    await update_status(document_id, "chunking")
+
     # Step 1: Chunk the document
     chunks = chunk_text(content)
     logger.info(f"Document chunked", extra={"document_id": document_id, "chunk_count": len(chunks)})
-    await update_status(document_id, "chunking")
 
     if not chunks:
         logger.error(f"No chunks created for document", extra={"document_id": document_id})
         await update_status(document_id, "failed")
         return 0
     
-    # Step 2: Embed chunks
-    embeddings = embed_texts(chunks)
-    logger.info(f"Chunks embedded", extra={"document_id": document_id, "embedding_shape": embeddings.shape})
-    await update_status(document_id, "embedding")
+    try:
+        # Step 2: Embed chunks
+        embeddings = embed_texts(chunks)
+        logger.info(f"Chunks embedded", extra={"document_id": document_id, "embedding_shape": embeddings.shape})
+        await update_status(document_id, "embedding")
 
-    # Step 3: Build metadata for each chunk
-    metadatas: List[Dict[str, Any]] = []
-    for i, chunk in enumerate(chunks):
-        metadatas.append(
-            {
-                "document_id": document_id,
-                "chunk_id": i,
-                "title": title,       
-                "text": chunk,
-            }
-        )
+        # Step 3: Build metadata for each chunk
+        metadatas: List[Dict[str, Any]] = []
+        for i, chunk in enumerate(chunks):
+            metadatas.append(
+                {
+                    "document_id": document_id,
+                    "chunk_id": i,
+                    "title": title,
+                    "text": chunk,
+                }
+            )
 
-    # Step 4: Add to FAISS
-    add_embeddings(embeddings, metadatas)
-    logger.info(f"Embeddings added to FAISS", extra={"document_id": document_id})
-    await update_status(document_id, "saving")
+        # Step 4: Add to FAISS
+        add_embeddings(embeddings, metadatas)
+        logger.info(f"Embeddings added to FAISS", extra={"document_id": document_id})
+        await update_status(document_id, "saving")
+    except Exception as e:
+        logger.error("Indexing failed during embedding/save", extra={
+            "document_id": document_id,
+            "error": str(e)
+        }, exc_info=True)
+        await update_status(document_id, "failed")
+        raise
 
     # Step 5: Completed
     await update_status(document_id, "completed", chunk_count=len(chunks))
@@ -113,31 +124,53 @@ def update_document(
     - re-index new embeddings
     """
 
-    # Delete all old chunks for this document
-    delete_document(document_id)
-    
-    # Re-chunk
-    chunks = chunk_text(content)
-    if not chunks: 
-        return 0
-    
-    # Re-embed
-    embeddings = embed_texts(chunks)
+    logger.info("Starting document update", extra={
+        "document_id": document_id,
+        "title": title,
+        "content_length": len(content),
+    })
 
-    # Re-store into FAISS
-    metadatas: List[Dict[str, Any]] =[]
-    for idx, chunk in enumerate(chunks):
-        metadatas.append(
-            {
-                "document_id": document_id,
-                "chunk_id": idx,
-                "title": title,
-                "text": chunk,
-            }
-        )
-    add_embeddings(embeddings, metadatas)
+    _, existing_metadata = load_index_and_metadata()
+    old_document_metadata = [m.copy() for m in existing_metadata if m.get("document_id") == document_id]
 
-    return len(chunks)
+    try:
+        delete_document(document_id)
+        logger.info("Deleted existing document chunks", extra={"document_id": document_id})
+
+        chunks = chunk_text(content)
+        if not chunks:
+            logger.warning("No chunks created during update", extra={"document_id": document_id})
+            return 0
+
+        embeddings = embed_texts(chunks)
+        logger.info("Embedded updated chunks", extra={"document_id": document_id, "chunk_count": len(chunks)})
+
+        metadatas: List[Dict[str, Any]] = []
+        for idx, chunk in enumerate(chunks):
+            metadatas.append(
+                {
+                    "document_id": document_id,
+                    "chunk_id": idx,
+                    "title": title,
+                    "text": chunk,
+                }
+            )
+        add_embeddings(embeddings, metadatas)
+        logger.info("Document update completed", extra={"document_id": document_id, "chunk_count": len(chunks)})
+        return len(chunks)
+    except Exception as e:
+        logger.error("Document update failed", extra={
+            "document_id": document_id,
+            "error": str(e),
+        }, exc_info=True)
+
+        if old_document_metadata:
+            logger.warning("Restoring previous document vectors after update failure", extra={"document_id": document_id})
+            _, current_metadata = load_index_and_metadata()
+            without_document = [m for m in current_metadata if m.get("document_id") != document_id]
+            rebuild_index(without_document + old_document_metadata)
+
+        raise
 
 # Answer Query using RAG (Gemini + FAISS)
 def answer_query(
@@ -217,12 +250,11 @@ def answer_query(
     # Log the generated answer for debugging/comparison
     logger.info("=== PIPELINE GENERATED ANSWER ===", extra={
         "session_id": session_id,
-        "query": query,
-        "answer": answer,
+        "query_preview": query[:120],
+        "answer_preview": answer[:200],
         "answer_length": len(answer),
         "sources_count": len(docs)
     })
-    logger.info(f"[PIPELINE_ANSWER] {answer[:500]}..." if len(answer) > 500 else f"[PIPELINE_ANSWER] {answer}")
 
     # Save conversation to memory
     save_turn(session_id, user_message=query, ai_message=answer)
@@ -347,30 +379,15 @@ async def answer_query_stream(req):
     context_chunks = _prepare_context_list(raw_chunks)
     sources = results
 
-    # Track full answer for logging and duplicate detection
+    # Track full answer for postprocessing
     full_answer_tokens = []
-    full_answer_so_far = ""
 
     # Stream LLM - pass history for better responses
     llm_start = time.perf_counter()
     async for token in stream_llm_answer(query, context_chunks, req.system_prompt, history_text):
-        # Skip empty tokens
         if not token:
             continue
-
-        # Detect if token would cause repetition (check if this text already appeared)
-        if len(full_answer_so_far) > 50:
-            # Check if the new token is repeating recent content
-            recent_text = full_answer_so_far[-100:]
-            if token.strip() and token.strip() in recent_text:
-                # Might be starting to repeat, check for longer pattern
-                if len(token.strip()) > 3:
-                    logger.debug(f"Skipping potentially repeated token: {token[:20]}")
-                    continue
-
         full_answer_tokens.append(token)
-        full_answer_so_far += token
-        yield {"type": "token", "content": token}
 
     llm_duration = time.perf_counter() - llm_start
     LLM_LATENCY.labels("stream").observe(llm_duration)
@@ -383,21 +400,20 @@ async def answer_query_stream(req):
         "total_ms": round(total_duration * 1000, 2)
     })
     
-    # Log the complete streamed answer for debugging/comparison
-    full_answer = "".join(full_answer_tokens)
-    
-    # Postprocess the full answer to clean up formatting and remove repetitions
-    full_answer = postprocess_answer(full_answer)
+    # Postprocess and stream final answer (postprocessed text only)
+    full_answer = postprocess_answer("".join(full_answer_tokens))
+
+    for token in full_answer.split():
+        yield {"type": "token", "content": token + " "}
     
     logger.info("=== PIPELINE STREAMED ANSWER ===", extra={
         "session_id": req.session_id,
-        "query": query,
-        "answer": full_answer,
+        "query_preview": query[:120],
+        "answer_preview": full_answer[:200],
         "answer_length": len(full_answer),
         "token_count": len(full_answer_tokens),
         "sources_count": len(sources)
     })
-    logger.info(f"[PIPELINE_STREAM_ANSWER] {full_answer[:500]}..." if len(full_answer) > 500 else f"[PIPELINE_STREAM_ANSWER] {full_answer}")
 
     # Save conversation to memory for chat history continuity
     save_turn(req.session_id, user_message=query, ai_message=full_answer)

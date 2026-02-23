@@ -53,9 +53,9 @@ curl -X POST http://localhost:8000/auth/login \
 ```bash
 curl -X POST http://localhost:8000/auth/reset-password \
   -H "Content-Type: application/json" \
-  -d '{"token": "<jwt_token>", "new_password": "newpass123"}'
+  -d '{"token": "<single_use_reset_token_from_email>", "new_password": "newpass123"}'
 ```
-**Expected**: 200 OK with new token
+**Expected**: 200 OK with new token (reset token is single-use and should fail if reused)
 
 ### ✅ Document Endpoints
 
@@ -169,26 +169,33 @@ curl -X GET http://localhost:8000/admin/documents \
 
 ### ✅ Vector Metadata Endpoints
 
+> Security note: `/vectors/sync` and `/vectors/document/{id}` are backend-internal operations in current implementation. Restrict via network isolation (private subnet / internal service mesh / reverse proxy ACLs) or add API auth middleware before public exposure.
+
 #### Sync Metadata (Internal - called by AI engine)
 ```bash
 curl -X POST http://localhost:8000/vectors/sync \
   -H "Content-Type: application/json" \
+  -H "X-Internal-Token: <internal_service_token>" \
   -d '{"metadata": [{"document_id": 1, "chunk_id": 0, "text": "Sample chunk"}]}'
 ```
 **Expected**: 200 OK with sync status
 
 #### Get Vector Metadata
 ```bash
-curl -X GET http://localhost:8000/vectors/document/1
+curl -X GET http://localhost:8000/vectors/document/1 \
+  -H "X-Internal-Token: <internal_service_token>"
 ```
 **Expected**: 200 OK with chunk list
 
 ### ✅ AI Engine Endpoints
 
+> Security note: AI engine routes (`/index-document`, `/query`, `/stream`, `/debug/all-documents`) should be exposed only behind backend/proxy auth. If called directly, require internal network access and service credentials.
+
 #### Index Document
 ```bash
 curl -X POST http://localhost:8001/index-document \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <service_token>" \
   -d '{"document_id": 1, "title": "Test", "content": "Sample content"}'
 ```
 **Expected**: 200 OK with indexing confirmation
@@ -197,6 +204,7 @@ curl -X POST http://localhost:8001/index-document \
 ```bash
 curl -X POST http://localhost:8001/query \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <service_token>" \
   -d '{"session_id": "test", "query": "What is this about?", "document_ids": [1], "k": 5}'
 ```
 **Expected**: 200 OK with answer and sources
@@ -205,6 +213,7 @@ curl -X POST http://localhost:8001/query \
 ```bash
 curl -X POST http://localhost:8001/stream \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <service_token>" \
   -d '{"session_id": "test", "query": "Explain this", "document_ids": [1]}' \
   --no-buffer
 ```
@@ -212,9 +221,10 @@ curl -X POST http://localhost:8001/stream \
 
 #### Debug Documents
 ```bash
-curl -X GET http://localhost:8001/debug/all-documents
+curl -X GET http://localhost:8001/debug/all-documents \
+  -H "Authorization: Bearer <admin_or_internal_token>"
 ```
-**Expected**: 200 OK with indexed documents
+**Expected**: 200 OK with indexed documents (must be restricted to admin/internal access)
 
 ## Load Testing
 

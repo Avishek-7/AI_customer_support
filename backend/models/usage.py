@@ -1,5 +1,4 @@
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Float
+from sqlalchemy import Column, Integer, String, DateTime, Float, func
 from core.database import Base
 
 
@@ -11,4 +10,4 @@ class APIUsage(Base):
     endpoint = Column(String)
     tokens = Column(Integer)
     latency = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, server_default=func.now())

@@ -1,21 +1,26 @@
 from typing import List, Optional
 import re
+import json
+from functools import lru_cache
 from llm.prompt_template import rag_prompt
-from utils.config import settings
+from utils.config import get_settings
 from utils.logger import get_logger
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 logger = get_logger("ai_engine.llm")
 
-# Configure LLM with lower temperature to reduce randomness and repetition
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=settings.GOOGLE_API_KEY,
-    temperature=0.2,  # Lower temperature for more focused responses
-    max_output_tokens=1536,  # Reduced to prevent over-long responses
-    top_p=0.8,  # Nucleus sampling for more focused output
-)
+
+@lru_cache(maxsize=1)
+def _get_llm() -> ChatGoogleGenerativeAI:
+    settings = get_settings()
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=settings.GOOGLE_API_KEY,
+        temperature=0.2,
+        max_output_tokens=1536,
+        top_p=0.8,
+    )
 
 def generate_answer(
     question: str,
@@ -43,12 +48,12 @@ def generate_answer(
     )
 
     try:
-        result = llm.invoke(formatted_prompt)
+        result = _get_llm().invoke(formatted_prompt)
         logger.info("Answer generated", extra={"answer_length": len(result.content)})
         return result.content
     except Exception as e:
         logger.error(f"Gemini API error: {e}", exc_info=True)
-        return f"[ERROR calling Gemini API] {e}"
+        return "[ERROR calling Gemini API]"
     
 async def stream_llm_answer(question, context_chunks, system_prompt, chat_history=""):
     logger.info("Starting LLM stream", extra={
@@ -65,15 +70,16 @@ async def stream_llm_answer(question, context_chunks, system_prompt, chat_histor
         chat_history=chat_history or ""
     )
 
-    token_count = 0
+    chunk_count = 0
     full_response = ""
     
     try:
-        async for chunk in llm.astream(prompt):
+        async for chunk in _get_llm().astream(prompt):
             content = getattr(chunk, 'content', None)
             if content is not None and content != "":
-                token_count += 1
+                chunk_count += 1
                 full_response += content
+                yield content
     except Exception as e:
         logger.error(f"Streaming error: {e}", exc_info=True)
         yield f"\n\n[Error generating response: {str(e)}]"
@@ -89,12 +95,8 @@ async def stream_llm_answer(question, context_chunks, system_prompt, chat_histor
     logger.info("LLM stream completed", extra={
         "original_length": len(full_response),
         "deduplicated_length": len(deduplicated),
-        "token_count": token_count
+        "chunk_count": chunk_count
     })
-    
-    # Yield deduplicated content as a single token to the pipeline
-    # The pipeline will then handle it as a normal token
-    yield deduplicated
 
 
 
@@ -184,29 +186,30 @@ Provide your critique in the following JSON format:
 Evaluate carefully and be honest about strengths and weaknesses."""
 
     try:
-        result = llm.invoke(critique_prompt)
+        result = _get_llm().invoke(critique_prompt)
         critique_text = result.content
         
-        # Try to extract JSON from the response
-        import json
-        import re
-        
-        # Find JSON block in response
-        json_match = re.search(r'\{.*\}', critique_text, re.DOTALL)
-        if json_match:
-            critique_data = json.loads(json_match.group())
-            logger.info("Self-critique generated", extra={
-                "overall_score": critique_data.get("overall_score"),
-                "grounded_in_context": critique_data.get("grounded_in_context")
-            })
-            return critique_data
-        else:
-            # Fallback if JSON parsing fails
-            return {
-                "overall_score": 5,
-                "summary": critique_text,
-                "error": "Could not parse structured critique"
-            }
+        candidates = []
+        fence_matches = re.findall(r"```json\s*(\{.*?\})\s*```", critique_text, re.DOTALL | re.IGNORECASE)
+        candidates.extend(fence_matches)
+        candidates.extend(re.findall(r'\{.*?\}', critique_text, re.DOTALL))
+
+        for candidate in candidates:
+            try:
+                critique_data = json.loads(candidate)
+                logger.info("Self-critique generated", extra={
+                    "overall_score": critique_data.get("overall_score"),
+                    "grounded_in_context": critique_data.get("grounded_in_context")
+                })
+                return critique_data
+            except json.JSONDecodeError:
+                continue
+
+        return {
+            "overall_score": 5,
+            "summary": critique_text,
+            "error": "Could not parse structured critique"
+        }
     except Exception as e:
         logger.error(f"Critique generation error: {e}", exc_info=True)
         return {
@@ -273,7 +276,7 @@ SPECIAL INSTRUCTIONS:
 Please answer the question following the special instructions above."""
     
     try:
-        result = llm.invoke(regeneration_prompt)
+        result = _get_llm().invoke(regeneration_prompt)
         logger.info("Answer regenerated", extra={
             "new_answer_length": len(result.content),
             "constraints": constraints[:50]

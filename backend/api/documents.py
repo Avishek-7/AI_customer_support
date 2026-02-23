@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import httpx
@@ -159,10 +159,10 @@ async def update_document(
     # Check ownership - raises 404 if not found or access denied
     doc = await check_document_ownership(db, doc_id, current_user)
     
-    if update_data.title:
+    if update_data.title is not None:
         doc.title = update_data.title
 
-    if update_data.content:
+    if update_data.content is not None:
         doc.content = update_data.content
 
     await db.commit()
@@ -265,8 +265,12 @@ async def search_documents(
 @router.post("/update-status")
 async def update_document_status(
     body: DocumentStatusUpdateRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
 ):
+    if not internal_api_key or internal_api_key != settings.INTERNAL_API_KEY:
+        raise ErrorHandler.forbidden("Invalid internal API key")
+
     logger.info(f"Updating document status", extra={
         "document_id": body.document_id,
         "status": body.status,
@@ -424,7 +428,7 @@ async def reindex_document(
             doc.index_status = "failed"
             try:
                 await db.commit()
-            except:
+            except Exception:
                 await db.rollback()
             logger.error(f"Unexpected re-index error", extra={"doc_id": doc_id, "error": str(e)})
             raise ErrorHandler.internal_error("An unexpected error occurred during re-indexing")

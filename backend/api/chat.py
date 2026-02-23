@@ -1,18 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import List, Optional
+import asyncio
 import httpx
 import json
 import time
 from core.database import get_db
+from core.database import AsyncSessionLocal
 from core.security import get_current_user
 from core.config import settings
 from core.rate_limit import rate_limit
 from core.error_handler import ErrorHandler
-from utils.usage_tracker import track_usage
+from utils.usage_tracker import track_usage, count_tokens
 from utils.cache import get_cached_response, set_cached_response
 from utils.metrics import AI_ENGINE_LATENCY, CACHE_HITS, CACHE_MISSES
 from models.user import User
@@ -73,6 +75,74 @@ async def enrich_conversation_response(
     )
 
 
+async def enrich_conversation_list_response(
+    db: AsyncSession,
+    conversations: List[Conversation],
+) -> List[ConversationResponse]:
+    if not conversations:
+        return []
+
+    conversation_ids = [c.id for c in conversations]
+
+    message_count_result = await db.execute(
+        select(ChatHistory.conversation_id, func.count(ChatHistory.id))
+        .filter(ChatHistory.conversation_id.in_(conversation_ids))
+        .group_by(ChatHistory.conversation_id)
+    )
+    message_count_map = {conv_id: count for conv_id, count in message_count_result.all()}
+
+    assistant_preview_result = await db.execute(
+        select(ChatHistory.conversation_id, ChatHistory.content)
+        .filter(
+            ChatHistory.conversation_id.in_(conversation_ids),
+            ChatHistory.role == "assistant",
+        )
+        .order_by(ChatHistory.conversation_id.asc(), ChatHistory.timestamp.desc())
+    )
+
+    preview_map = {}
+    for conversation_id, content in assistant_preview_result.all():
+        if conversation_id not in preview_map:
+            preview_map[conversation_id] = content[:100] + ("..." if len(content) > 100 else "")
+
+    return [
+        ConversationResponse(
+            id=conversation.id,
+            user_id=conversation.user_id,
+            title=conversation.title,
+            created_at=conversation.created_at,
+            updated_at=conversation.updated_at,
+            message_count=message_count_map.get(conversation.id, 0),
+            last_message_preview=preview_map.get(conversation.id),
+        )
+        for conversation in conversations
+    ]
+
+
+async def _save_chat_turn_with_retry(
+    db: AsyncSession,
+    user_id: int,
+    conversation_id: int,
+    user_message: str,
+    assistant_response: str,
+    retries: int = 3,
+) -> None:
+    for attempt in range(1, retries + 1):
+        try:
+            await save_chat_turn(
+                db,
+                user_id,
+                conversation_id,
+                user_message,
+                assistant_response,
+            )
+            return
+        except Exception:
+            if attempt == retries:
+                raise
+            await asyncio.sleep(0.1 * (2 ** (attempt - 1)))
+
+
 # Request and Response Models
 class ChatRequest(BaseModel):
     message: str
@@ -85,7 +155,7 @@ class ChatResponse(BaseModel):
     sources: List[dict]
 
 # Chat Endpoint
-@router.post("/chat", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def chat_with_ai(
     body: ChatRequest,
     db: AsyncSession = Depends(get_db),
@@ -219,25 +289,24 @@ async def chat_with_ai(
     })
 
     try:
-        await save_chat_turn(
+        await _save_chat_turn_with_retry(
             db,
             current_user.id,
             body.conversation_id,
             body.message,
-            data["answer"]
+            data["answer"],
         )
     except Exception as e:
         logger.error(f"Failed to persist chat history", extra={
             "user_id": current_user.id,
             "conversation_id": body.conversation_id,
             "error": str(e)
-        })
-        # Log the error but still return the answer to the user
-        # (chat persistence failure shouldn't break the response)
+        }, exc_info=True)
+        raise ErrorHandler.internal_error("Failed to persist chat response")
 
     # Track API usage
     latency = time.time() - start_time
-    tokens = len(data["answer"].split())  # Approximate token count
+    tokens = count_tokens(data["answer"])
     try:
         await track_usage(db, current_user.id, "/chat", tokens, latency)
     except Exception as e:
@@ -256,7 +325,6 @@ async def chat_with_ai(
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequest,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -264,6 +332,9 @@ async def chat_stream(
     Streaming chat endpoint.
     Requires an explicit conversation_id.
     """
+    # Rate limiting check (same as non-stream endpoint)
+    rate_limit(current_user.id, limit=100, window=60)
+
     # Verify conversation exists and belongs to user
     result = await db.execute(
         select(Conversation).filter(
@@ -319,6 +390,7 @@ async def chat_stream(
 
     # SSE generator
     async def event_generator():
+        local_db = AsyncSessionLocal()
         async with httpx.AsyncClient() as client:
             try:
                 async with client.stream(
@@ -330,7 +402,7 @@ async def chat_stream(
                         "system_prompt": body.system_prompt,
                         "document_ids": document_ids,  # None means search all
                     },
-                    timeout=None,
+                    timeout=httpx.Timeout(300.0, connect=10.0, read=300.0, write=30.0),
                 ) as stream:
                     async for chunk in stream.aiter_lines():
                         if chunk.strip():
@@ -340,7 +412,12 @@ async def chat_stream(
                                     data = json.loads(chunk[6:])
                                     if data.get("type") == "token":
                                         full_answer_tokens.append(data.get("content", ""))
-                                except:
+                                except json.JSONDecodeError as e:
+                                    logger.debug("Skipping non-JSON stream chunk", extra={
+                                        "conversation_id": body.conversation_id,
+                                        "error": str(e),
+                                        "chunk_preview": chunk[:120],
+                                    })
                                     pass
                             # Pass through as-is; AI engine already formats as "data: {...}"
                             yield chunk + "\n\n"
@@ -358,7 +435,6 @@ async def chat_stream(
                 })
                 yield "data: {\"type\": \"error\", \"message\": \"AI engine error\"}\n\n"
         
-        # Log the complete streamed answer received from AI engine
         full_answer = "".join(full_answer_tokens)
         logger.info("Stream completed", extra={
             "user_id": current_user.id,
@@ -366,43 +442,37 @@ async def chat_stream(
             "answer_length": len(full_answer),
             "token_count": len(full_answer_tokens)
         })
-    
-    response = StreamingResponse(event_generator(), media_type="text/event-stream")
 
-    async def background_save():
-        """Save chat history after streaming completes"""
-        if not full_answer_tokens:
-            full_answer = ""
-        else:
-            full_answer = "".join(full_answer_tokens)
-        
         try:
-            await save_chat_turn(
-                db,
+            await _save_chat_turn_with_retry(
+                local_db,
                 current_user.id,
                 body.conversation_id,
                 body.message,
-                full_answer
+                full_answer,
             )
         except Exception as e:
-            logger.error(f"Failed to persist streamed chat history", extra={
+            logger.error("Failed to persist streamed chat history", extra={
                 "user_id": current_user.id,
                 "conversation_id": body.conversation_id,
-                "error": str(e)
-            })
-        
-        # Track API usage
+                "error": str(e),
+            }, exc_info=True)
+            yield "data: {\"type\": \"error\", \"message\": \"Failed to persist chat response\"}\n\n"
+
         latency = time.time() - start_time
-        tokens = len(full_answer_tokens)
+        tokens = count_tokens(full_answer)
         try:
-            await track_usage(db, current_user.id, "/chat/stream", tokens, latency)
+            await track_usage(local_db, current_user.id, "/chat/stream", tokens, latency)
         except Exception as e:
             logger.error(f"Failed to track stream usage", extra={
                 "user_id": current_user.id,
                 "error": str(e)
             })
+        finally:
+            await local_db.close()
     
-    background_tasks.add_task(background_save)
+    response = StreamingResponse(event_generator(), media_type="text/event-stream")
+
     return response
 
 
@@ -447,6 +517,8 @@ async def create_conversation(
 
 @router.get("/conversations", response_model=ConversationList)
 async def get_conversations(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -462,14 +534,17 @@ async def get_conversations(
         select(Conversation)
         .filter(Conversation.user_id == current_user.id)
         .order_by(Conversation.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     conversations = result.scalars().all()
+
+    total_result = await db.execute(
+        select(func.count(Conversation.id)).filter(Conversation.user_id == current_user.id)
+    )
+    total = total_result.scalar() or 0
     
-    # Enrich each conversation with metadata
-    enriched_conversations = []
-    for conv in conversations:
-        enriched = await enrich_conversation_response(db, conv)
-        enriched_conversations.append(enriched)
+    enriched_conversations = await enrich_conversation_list_response(db, conversations)
     
     latency = time.time() - start_time
     logger.info(f"Conversations retrieved", extra={
@@ -478,7 +553,7 @@ async def get_conversations(
         "latency": f"{latency:.3f}s"
     })
     
-    return ConversationList(conversations=enriched_conversations)
+    return ConversationList(conversations=enriched_conversations, total=total, limit=limit, offset=offset)
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationResponse)

@@ -4,6 +4,10 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
+if (!API_BASE) {
+    throw new Error("NEXT_PUBLIC_API_URL is required for frontend API client");
+}
+
 // ============================================================================
 // AUTHENTICATION APIs
 // ============================================================================
@@ -121,6 +125,9 @@ export async function getAllConversations(token: string) {
     const response = await fetch(`${API_BASE}/chat/conversations`, {
         headers: { "Authorization": `Bearer ${token}` },
     });
+    if (!response.ok) {
+        throw new Error(`Failed to load conversations (${response.status})`);
+    }
     return response.json();
 }
 
@@ -218,13 +225,34 @@ export async function streamChatMessage(
         }),
     });
 
-    const reader = response.body?.getReader();
+    if (!response.ok) {
+        let errorBody = "";
+        try {
+            errorBody = await response.text();
+        } catch {
+            errorBody = "";
+        }
+        throw new Error(`Stream chat request failed (${response.status}): ${errorBody || response.statusText}`);
+    }
+
+    if (!response.body) {
+        throw new Error("Stream chat response body is empty");
+    }
+
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
-    while (true) {
-        const { done, value } = await reader!.read();
+    while (reader) {
+        const { done, value } = await reader.read();
         if (done) break;
-        onChunk(decoder.decode(value));
+        if (value) {
+            onChunk(decoder.decode(value, { stream: true }));
+        }
+    }
+
+    const remaining = decoder.decode();
+    if (remaining) {
+        onChunk(remaining);
     }
 }
 

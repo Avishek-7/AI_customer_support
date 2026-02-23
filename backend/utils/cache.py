@@ -47,6 +47,7 @@ async def _get_redis() -> Optional[Redis]:
                     settings.REDIS_URL,
                     decode_responses=True,
                     socket_connect_timeout=1,
+                    socket_timeout=2,
                 )
     return _redis_client
 

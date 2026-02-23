@@ -65,10 +65,5 @@ def normalize_path_to_endpoint(path: str) -> str:
         if base in _PATH_TO_ENDPOINT:
             return _PATH_TO_ENDPOINT[base]
     
-    # Default: return first two segments or first segment
-    if len(parts) >= 2 and parts[1]:
-        return f"/{parts[0]}/{parts[1]}"
-    elif parts and parts[0]:
-        return f"/{parts[0]}"
-    
+    # For unmapped paths, collapse to a fixed label to bound cardinality.
     return "/unknown"

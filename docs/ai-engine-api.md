@@ -130,6 +130,9 @@ content → chunk_text() → embed_texts() → add_embeddings() → save_index()
 
 Update an existing document (delete + re-index).
 
+**Execution mode:** Synchronous request/response (unlike `POST /index-document`, which is asynchronous/background-oriented).
+Expect request latency to include delete + re-embed + FAISS reinsert work.
+
 **Request Body:**
 ```json
 {
@@ -591,6 +594,8 @@ keyword_overlap = |answer_words ∩ source_words| / |answer_words|
 alignment_score = 0.6 * max_similarity + 0.3 * avg_similarity + 0.1 * keyword_overlap
 hallucination_score = 1.0 - alignment_score
 ```
+
+**Metric note:** retrieval uses FAISS `IndexFlatL2` for nearest-neighbor search, while hallucination detection uses cosine similarity as a semantic alignment signal between generated answer embeddings and source embeddings. These are intentionally different stages/metrics and should not be compared directly as the same score type.
 
 ---
 

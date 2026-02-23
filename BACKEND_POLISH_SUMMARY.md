@@ -41,7 +41,7 @@ Features:
 ### All Chat Endpoints Use Centralized Persistence:
 - `POST /chat/chat` - Regular endpoint
 - `POST /chat/stream` - Streaming endpoint (via background task)
-- Error handling: chat persistence failures logged but don't break response
+- Error handling: persistence uses bounded retries; failures are surfaced to callers (or emitted as stream error events)
 
 ### Transaction Safety:
 - Database rollback on any failure
@@ -73,11 +73,14 @@ New fields:
 ### Helper Function:
 ```python
 async def enrich_conversation_response(db, conversation):
-    # Calculates metadata on-the-fly
-    # Message count
-    # Last message preview
-    # Used by all conversation endpoints
+   # Single-conversation metadata helper
+
+async def enrich_conversation_list_response(db, conversations):
+   # Batched metadata query path for list responses
+   # Avoids N+1 query patterns via grouped queries
 ```
+
+Performance note: list endpoints should use batched/joined metadata queries (Section 10) to avoid N+1 patterns.
 
 ### Endpoints Updated:
 - `POST /conversations` - Creates with metadata
@@ -232,7 +235,7 @@ Applied to:
 Enhanced with ErrorHandler:
 - Returns 429 with clear message
 - Logs rate limit violations
-- Gracefully degrades if Redis unavailable
+- Uses in-memory fallback with Redis circuit-breaker behavior; returns 503 if limiter infrastructure is unavailable
 ```
 
 ### Usage Tracking:
@@ -246,7 +249,7 @@ Applied after successful responses:
 - POST /documents/{id}/reindex - endpoint, token count, latency
 
 Token counting:
-- Approximate: len(response.split())
+- Tokenizer-based counting via `count_tokens(text, model=...)`
 - Logged consistently for trend analysis
 - Wrapped in try-catch (tracking failure doesn't break response)
 ```
@@ -359,7 +362,20 @@ All log unauthorized access attempts
 ### Database Migration:
 ```sql
 -- Add new column to conversations table
-ALTER TABLE conversations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+ALTER TABLE conversations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = CURRENT_TIMESTAMP;
+   RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_conversations_updated_at
+BEFORE UPDATE ON conversations
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
 
 -- ChatHistory already has timestamp column (verify it exists)
 ```
@@ -421,12 +437,14 @@ ALTER TABLE conversations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMEST
 - For users with many conversations, consider pagination or caching
 - Message count query could be optimized with materialized counts
 
-### Suggested Future Improvements:
-1. Add pagination to conversation listings
-2. Cache conversation metadata for users with 100+ conversations
-3. Denormalize message_count in conversations table
-4. Implement request deduplication for concurrent identical requests
-5. Add metrics dashboard for latency tracking
+### Required for production:
+1. Implement pagination for conversation listings
+2. Denormalize/maintain `message_count` safely if query load demands it
+
+### Nice to have:
+1. Cache conversation metadata for users with 100+ conversations
+2. Add metrics dashboard for latency tracking
+3. Implement request deduplication for concurrent identical requests
 
 ---
 
@@ -467,9 +485,11 @@ ALTER TABLE conversations ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMEST
 
 1. **Test** all endpoints thoroughly
 2. **Deploy** database migrations
-3. **Monitor** latency and error rates post-deployment
-4. **Gather feedback** from frontend team
-5. **Consider** future optimizations (pagination, caching)
+3. **Rollback plan**: document and test rollback steps, including restoring Chat model-related changes if needed
+4. **Monitoring thresholds**: define explicit alerts (error-rate and p99 latency thresholds)
+5. **Gradual rollout strategy**: use canary/feature-flag rollout with percentage ramps
+6. **Incident response plan**: define on-call ownership and escalation path
+7. **Implement pagination before production; consider caching for further optimization**
 
 ---
 

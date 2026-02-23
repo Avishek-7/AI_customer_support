@@ -18,13 +18,29 @@ export async function streamChat(
         }),
     });
 
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(`Chat stream request failed (${response.status}): ${errorBody || response.statusText}`);
+    }
+
     const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Chat stream response body is empty");
+    }
+
     const decoder = new TextDecoder();
 
     while (true) {
-        const {done, value} = await reader!.read();
+        const {done, value} = await reader.read();
         if (done) break;
 
-        cb(decoder.decode(value));
+        if (value) {
+            cb(decoder.decode(value, { stream: true }));
+        }
+    }
+
+    const remaining = decoder.decode();
+    if (remaining) {
+        cb(remaining);
     }
 }

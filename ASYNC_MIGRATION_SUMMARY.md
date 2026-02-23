@@ -57,9 +57,9 @@ Fully migrated both backend and AI engine to follow async programming rules, eli
 
 ### 1. Vectorstore (`ai_engine/vectorstore/vector_store.py`)
 - **Before**: Used blocking `requests.post/delete`
-- **After**: Async functions `_sync_metadata_to_db_async()` and `_delete_metadata_from_db_async()` using `httpx.AsyncClient`
-- Graceful fallback: If no event loop, uses sync `requests` as fallback
-- Uses `asyncio.create_task()` for non-blocking background sync
+- **After**: Uses explicit sync path for sync callers and async path for async callers
+- Avoid async-to-sync runtime fallback in async execution paths
+- Background tasks should use lifecycle-safe patterns (task tracking + callbacks / safe wrapper / TaskGroup)
 
 ### 2. Pipeline (`ai_engine/rag/pipeline.py`)
 - `index_document` already async ✓
@@ -78,7 +78,7 @@ Fully migrated both backend and AI engine to follow async programming rules, eli
 1. **No blocking DB calls in async routes**: All `Session` operations replaced with `AsyncSession` + await
 2. **No blocking HTTP in async contexts**: All `requests` replaced with `httpx.AsyncClient`
 3. **Proper async propagation**: All functions calling async operations are themselves async
-4. **Event loop friendly**: I/O operations use `await`, CPU-bound FAISS operations are acceptable
+4. **Event loop friendly**: I/O operations use `await`; CPU-bound FAISS/embedding ops should be offloaded with `asyncio.to_thread(...)` when used from async request handlers
 
 ### Key Patterns Used
 
@@ -141,19 +141,26 @@ async with httpx.AsyncClient() as client:
    - Chat streaming
    - Admin operations
 
+   Async-specific checklist:
+   - Install `pytest-asyncio` and `httpx`
+   - Set `asyncio_mode = auto` in `pytest.ini`/`pyproject.toml`
+   - Use `httpx.AsyncClient` with `@pytest.mark.asyncio` for endpoint tests
+   - Verify concurrent request behavior and DB pool behavior under load
+   - Verify async error handling, cleanup, and background task completion
+
 ## Potential Issues & Solutions
 
 ### Issue: ImportError for asyncpg
 **Solution:** `pip install asyncpg`
 
 ### Issue: RuntimeError: no running event loop
-**Solution:** Already handled with try/except blocks that fall back to sync requests
+**Solution:** Do not auto-fallback from async to sync at runtime. Keep explicit sync and async entry points and ensure async functions are called only from async contexts (or via an explicit event loop runner in sync code).
 
 ### Issue: Database session not closing
 **Solution:** Using `async with` context manager ensures proper cleanup
 
 ### Issue: Blocking FAISS operations
-**Solution:** FAISS operations are CPU-bound and fast; acceptable in async context. For heavy operations, consider `asyncio.to_thread()` if needed.
+**Solution:** FAISS and embedding operations are CPU-bound and can block the event loop under load. Offload with `await asyncio.to_thread(...)` (for example around `model.embed(...)` / `vector_store.search(...)`) to keep request handling responsive and improve concurrency scaling.
 
 ## Performance Benefits
 
@@ -164,6 +171,8 @@ async with httpx.AsyncClient() as client:
 
 ## Notes
 
-- All sync database helper functions (in utils/usage_tracker.py, etc.) may need async migration if called from async contexts
+- **Action required:** all database helper functions (including helpers like `utils/usage_tracker.py`) MUST be async-safe when invoked from async routes; sync DB calls in async paths block the event loop.
+   - Audit step: identify all helper functions called from async contexts.
+   - Verification: run async route performance tests and confirm no blocking DB helper calls remain.
 - Background jobs (RQ/Redis) remain sync - acceptable as they run in separate workers
 - FAISS operations (embedding, search) are CPU-bound and acceptable in async routes for small-medium workloads

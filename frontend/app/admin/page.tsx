@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Record<string, number | undefined> | null>(null);
   const [systemStats, setSystemStats] = useState<Record<string, number | undefined> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -28,6 +29,7 @@ export default function AdminDashboard() {
       }
 
       try {
+        setError(null);
         const [statsData, systemData] = await Promise.all([
           getAdminStats(token),
           getAdminSystemStats(token),
@@ -35,6 +37,7 @@ export default function AdminDashboard() {
         setStats(statsData);
         setSystemStats(systemData);
       } catch (err) {
+        setError("Failed to load admin dashboard");
         console.error("Failed to load admin dashboard:", err);
       } finally {
         setLoading(false);
@@ -61,6 +64,39 @@ export default function AdminDashboard() {
       <div className="flex-1 p-8">
         <div className="max-w-7xl mx-auto">
         <h1 className="text-4xl font-bold mb-8">Admin Dashboard</h1>
+
+        {error && (
+          <div className="mb-6 rounded border border-red-700 bg-red-950/60 p-4">
+            <p className="text-red-300">{error}</p>
+            <button
+              onClick={async () => {
+                setLoading(true);
+                setError(null);
+                const token = getToken();
+                if (!token) {
+                  router.push("/login");
+                  return;
+                }
+                try {
+                  const [statsData, systemData] = await Promise.all([
+                    getAdminStats(token),
+                    getAdminSystemStats(token),
+                  ]);
+                  setStats(statsData);
+                  setSystemStats(systemData);
+                } catch (retryErr) {
+                  setError("Failed to load admin dashboard");
+                  console.error("Admin dashboard retry failed:", retryErr);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="mt-3 rounded bg-red-700 px-3 py-1 text-sm font-semibold hover:bg-red-600"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -92,27 +128,27 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-gray-400 text-sm">Total Users</p>
-                <p className="text-2xl font-bold">{systemStats.total_users}</p>
+                <p className="text-2xl font-bold">{systemStats.total_users ?? 0}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Total Documents</p>
-                <p className="text-2xl font-bold">{systemStats.total_documents}</p>
+                <p className="text-2xl font-bold">{systemStats.total_documents ?? 0}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Total Chats</p>
-                <p className="text-2xl font-bold">{systemStats.total_chats}</p>
+                <p className="text-2xl font-bold">{systemStats.total_chats ?? 0}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Total API Calls</p>
-                <p className="text-2xl font-bold">{systemStats.total_api_calls}</p>
+                <p className="text-2xl font-bold">{systemStats.total_api_calls ?? 0}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Users (Last 24h)</p>
-                <p className="text-2xl font-bold text-green-400">{systemStats.users_last_24h}</p>
+                <p className="text-2xl font-bold text-green-400">{systemStats.users_last_24h ?? 0}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Documents (Last 24h)</p>
-                <p className="text-2xl font-bold text-green-400">{systemStats.documents_last_24h}</p>
+                <p className="text-2xl font-bold text-green-400">{systemStats.documents_last_24h ?? 0}</p>
               </div>
             </div>
           </div>

@@ -10,6 +10,7 @@ export default function AdminAnalyticsPage() {
   const [usageStats, setUsageStats] = useState<Array<Record<string, unknown>>>([]);
   const [systemStats, setSystemStats] = useState<Record<string, number | undefined> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -25,6 +26,7 @@ export default function AdminAnalyticsPage() {
       }
 
       try {
+        setError(null);
         const [usage, system] = await Promise.all([
           getAdminUsageStats(token),
           getAdminSystemStats(token),
@@ -32,6 +34,7 @@ export default function AdminAnalyticsPage() {
         setUsageStats(usage || []);
         setSystemStats(system);
       } catch (err) {
+        setError("Failed to load analytics");
         console.error("Failed to load analytics:", err);
       } finally {
         setLoading(false);
@@ -53,6 +56,7 @@ export default function AdminAnalyticsPage() {
           <p>Loading...</p>
         ) : (
           <div className="space-y-8">
+            {error && <p className="text-red-400">{error}</p>}
             {/* System Overview */}
             {systemStats && (
               <div className="bg-gray-800 p-6 rounded-lg">

@@ -8,7 +8,8 @@ import { authLogger } from "@/lib/logger";
 export default function ResetPasswordPage() {
   const params = useParams();
   const router = useRouter();
-  const token = params.token as string;
+  const tokenParam = params?.token;
+  const token = typeof tokenParam === "string" && !Array.isArray(tokenParam) ? tokenParam : null;
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -17,32 +18,55 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
+    if (!token) {
+      setVerifying(false);
+      setMessage({ type: "error", text: "Invalid reset token" });
+      return;
+    }
+
+    let isMounted = true;
+    let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+
     const verifyToken = async () => {
       authLogger.info("Verifying reset token");
       try {
         const response = await verifyResetToken(token);
+        if (!isMounted) return;
         if (response.message) {
           authLogger.info("Reset token verified successfully", { userId: response.user_id });
           setVerifying(false);
         } else if (response.detail) {
           setMessage({ type: "error", text: "Invalid or expired reset token" });
+          setVerifying(false);
           authLogger.warn("Invalid reset token", { error: response.detail });
-          setTimeout(() => router.push("/login"), 3000);
+          redirectTimer = setTimeout(() => router.push("/login"), 3000);
         }
       } catch (err) {
+        if (!isMounted) return;
         setMessage({ type: "error", text: "Failed to verify token" });
+        setVerifying(false);
         authLogger.error("Token verification error", { error: String(err) });
-        setTimeout(() => router.push("/login"), 3000);
+        redirectTimer = setTimeout(() => router.push("/login"), 3000);
       }
     };
 
-    if (token) {
-      verifyToken();
-    }
+    verifyToken();
+
+    return () => {
+      isMounted = false;
+      if (redirectTimer) {
+        clearTimeout(redirectTimer);
+      }
+    };
   }, [token, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!token) {
+      setMessage({ type: "error", text: "Invalid reset token" });
+      return;
+    }
 
     if (!password.trim() || !confirmPassword.trim()) {
       setMessage({ type: "error", text: "Please fill in all fields" });

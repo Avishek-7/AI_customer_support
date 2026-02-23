@@ -20,7 +20,4 @@ def postprocess_answer(text: str) -> str:
 
     text = " ".join(cleaned)
 
-    # Trim dangling incomplete endings
-    text = re.sub(r'([^\.\!\?])$', r'\1', text)
-
     return text.strip()

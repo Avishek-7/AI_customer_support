@@ -5,7 +5,7 @@ from core.database import Base
 class ChatHistory(Base):
     __tablename__ = "chat_history"
     id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"))
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)

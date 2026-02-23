@@ -611,7 +611,7 @@ npm start
 | ✅ | Conversation management |
 | ✅ | Docker Compose setup |
 | 🚧 | Multi-language support |
-| 🚧 | Admin dashboard |
+| ✅ | Admin dashboard |
 | 📋 | Kubernetes deployment |
 | 📋 | OAuth (Google, GitHub) |
 | 📋 | File type support (DOCX, TXT) |

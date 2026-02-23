@@ -9,6 +9,7 @@ export default function AdminDocumentsPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -24,9 +25,13 @@ export default function AdminDocumentsPage() {
       }
 
       try {
+        setError(null);
         const data = await getAdminDocuments(token);
         setDocuments(data.documents || []);
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load documents";
+        setError(message);
+        setDocuments([]);
         console.error("Failed to load documents:", err);
       } finally {
         setLoading(false);
@@ -48,6 +53,7 @@ export default function AdminDocumentsPage() {
           <p>Loading...</p>
         ) : (
           <div className="bg-gray-800 rounded-lg overflow-hidden">
+            {error && <p className="text-red-400 px-4 pt-4">{error}</p>}
             <div className="p-4 bg-gray-700 flex items-center justify-between">
               <p className="font-semibold">Total: {documents.length} documents</p>
             </div>

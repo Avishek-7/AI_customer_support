@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 class DocumentBase(BaseModel):
     title: str
@@ -42,7 +42,7 @@ class DocumentSearchResponse(BaseModel):
 
 class DocumentStatusUpdateRequest(BaseModel):
     document_id: int
-    status: str
+    status: Literal["pending", "processing", "indexing", "completed", "failed", "indexed"]
     chunk_count: Optional[int] = None
 
 

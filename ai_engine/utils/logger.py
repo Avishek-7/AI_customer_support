@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import contextvars
@@ -21,6 +21,7 @@ Features:
 
 # Public context var for request/correlation id
 request_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
+_logger_initialized = False
 
 
 def set_request_id(rid: Optional[str]) -> None:
@@ -46,7 +47,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -104,11 +105,11 @@ def init_logging(
         max_bytes: max file size before rotation (default 10MB)
         backup_count: number of backup files to keep
     """
+    global _logger_initialized
+    if _logger_initialized:
+        return
+
     root = logging.getLogger()
-    
-    # Remove existing handlers to avoid duplicates
-    for h in list(root.handlers):
-        root.removeHandler(h)
 
     env_level = os.getenv("LOG_LEVEL", "INFO").upper()
     chosen_level = level if level is not None else getattr(logging, env_level, logging.INFO)
@@ -144,6 +145,8 @@ def init_logging(
         root.addHandler(fh)
     except Exception:
         root.warning("Failed to initialize file handler; continuing with console only", exc_info=True)
+
+    _logger_initialized = True
 
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:

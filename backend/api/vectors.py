@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+import ipaddress
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete as sql_delete
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from core.database import get_db
+from core.config import settings
 from models.vector_meta import VectorMetadata
 from models.document import Document
 from utils.logger import get_logger
@@ -18,10 +21,48 @@ class VectorMetadataSync(BaseModel):
     metadata: List[Dict[str, Any]]
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _is_internal_ip(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(value)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return value in {"localhost", "unknown"}
+
+
+def require_service_auth(
+    request: Request,
+    internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
+) -> None:
+    client_ip = _get_client_ip(request)
+    if not internal_api_key:
+        logger.warning("Missing internal API key for vector endpoint", extra={"client_ip": client_ip})
+        raise HTTPException(status_code=401, detail="Missing internal API key")
+
+    if internal_api_key != settings.INTERNAL_API_KEY:
+        logger.warning("Invalid internal API key for vector endpoint", extra={"client_ip": client_ip})
+        raise HTTPException(status_code=401, detail="Invalid internal API key")
+
+
+def require_internal_network(request: Request) -> None:
+    client_ip = _get_client_ip(request)
+    if not _is_internal_ip(client_ip):
+        logger.warning("Blocked non-internal access to sensitive vector endpoint", extra={"client_ip": client_ip})
+        raise HTTPException(status_code=403, detail="Sensitive endpoint is restricted to internal network")
+
+
 @router.post("/sync")
 async def sync_vector_metadata(
     body: VectorMetadataSync,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_service_auth),
+    _network: None = Depends(require_internal_network),
 ):
     """
     Sync vector metadata from FAISS to PostgreSQL database.
@@ -34,6 +75,18 @@ async def sync_vector_metadata(
     try:
         # Delete all existing metadata (we're doing full sync from FAISS)
         await db.execute(sql_delete(VectorMetadata))
+
+        requested_document_ids = {
+            meta.get("document_id")
+            for meta in body.metadata
+            if meta.get("document_id") is not None
+        }
+        valid_document_ids = set()
+        if requested_document_ids:
+            docs_result = await db.execute(
+                select(Document.id).filter(Document.id.in_(requested_document_ids))
+            )
+            valid_document_ids = set(docs_result.scalars().all())
         
         # Insert new metadata
         synced_count = 0
@@ -41,9 +94,7 @@ async def sync_vector_metadata(
             document_id = meta.get("document_id")
             
             # Verify document exists
-            result = await db.execute(select(Document).filter(Document.id == document_id))
-            doc = result.scalar_one_or_none()
-            if not doc:
+            if document_id not in valid_document_ids:
                 logger.warning(f"Document {document_id} not found, skipping vector metadata")
                 continue
             
@@ -79,7 +130,9 @@ async def sync_vector_metadata(
 @router.delete("/document/{document_id}")
 async def delete_vector_metadata(
     document_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_service_auth),
+    _network: None = Depends(require_internal_network),
 ):
     """
     Delete all vector metadata for a specific document.
@@ -117,7 +170,8 @@ async def delete_vector_metadata(
 @router.get("/document/{document_id}")
 async def get_vector_metadata(
     document_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_service_auth),
 ):
     """
     Get all vector metadata for a specific document.
@@ -139,8 +193,8 @@ async def get_vector_metadata(
             {
                 "id": m.id,
                 "chunk_index": m.chunk_index,
-                "text_preview": m.text[:100] + "..." if len(m.text) > 100 else m.text,
-                "text_length": len(m.text),
+                "text_preview": ((m.text or "")[:100] + "...") if len(m.text or "") > 100 else (m.text or ""),
+                "text_length": len(m.text or ""),
                 "faiss_index": m.faiss_index,
                 "created_at": m.created_at.isoformat() if m.created_at else None
             }
@@ -150,7 +204,10 @@ async def get_vector_metadata(
 
 
 @router.get("/stats")
-async def get_vector_stats(db: AsyncSession = Depends(get_db)):
+async def get_vector_stats(
+    db: AsyncSession = Depends(get_db),
+    _auth: None = Depends(require_service_auth),
+):
     """
     Get statistics about vector storage.
     Shows how many vectors are stored per document.

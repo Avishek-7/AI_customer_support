@@ -20,7 +20,7 @@ def load_pdf_as_documents(file_path: str) -> List[Document]:
 def extract_text_from_pdf(file_path: str) -> str:
     """
     Load a PDF via LangChain and return plain concatenated text.
-    Useful when you just want text to strore in DB or send to AI engine. 
+    Useful when you just want text to store in DB or send to AI engine.
     """
     documents = load_pdf_as_documents(file_path)
     full_text = "\n\n".join(doc.page_content for doc in documents)

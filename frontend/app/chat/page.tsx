@@ -47,7 +47,7 @@ export default function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
   const getToken = () => {
     if (typeof window === "undefined") return null;
@@ -63,7 +63,14 @@ export default function ChatPage() {
       const data = await getAllConversations(token);
       setConversations(data.conversations ?? []);
       chatLogger.info("Conversations loaded", { count: data.conversations?.length || 0 });
-    } catch (err) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("401")) {
+        chatLogger.warn("Token expired while fetching conversations, redirecting to login");
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
       chatLogger.error("Failed to fetch conversations", { error: String(err) });
     } finally {
       setLoadingConversations(false);
@@ -154,7 +161,11 @@ export default function ChatPage() {
       await updateConversation(convId, token, title);
       await fetchConversations();
       if (conversationId === convId) {
-        // Update title in state if it's the current conversation
+        setConversations((prev) =>
+          prev.map((conversation) =>
+            conversation.id === convId ? { ...conversation, title } : conversation
+          )
+        );
       }
       chatLogger.info("Conversation renamed", { conversationId: convId, title });
     } catch (err) {
@@ -210,8 +221,7 @@ export default function ChatPage() {
       const copy = [...prev];
       const last = copy[copy.length - 1];
       if (last && last.role === "assistant") {
-        // APPEND chunk to existing content, don't overwrite
-        last.content += chunk;
+        copy[copy.length - 1] = { ...last, content: `${last.content}${chunk}` };
       } else {
         copy.push({ role: "assistant", content: chunk });
       }
@@ -260,7 +270,11 @@ export default function ChatPage() {
         return;
       }
 
-      await streamChatMessage(userMessage, currentConversationId, token, (chunk) => {
+      await streamChatMessage(
+        userMessage,
+        currentConversationId,
+        token,
+        (chunk) => {
         try {
           const lines = chunk.split("\n");
           for (const line of lines) {
@@ -278,7 +292,7 @@ export default function ChatPage() {
                 const copy = [...prev];
                 const last = copy[copy.length - 1];
                 if (last && last.role === "assistant") {
-                  last.sources = finalSources;
+                  copy[copy.length - 1] = { ...last, sources: finalSources };
                 }
                 return copy;
               });
@@ -287,7 +301,11 @@ export default function ChatPage() {
         } catch (e) {
           chatLogger.error("Failed to parse stream event", { error: String(e) });
         }
-      });
+      },
+        {
+          document_ids: selectedDocIds.length > 0 ? selectedDocIds : undefined,
+        }
+      );
 
       chatLogger.logAnswer("FRONTEND_RECEIVED_ANSWER", fullAnswer, {
         query: userMessage,

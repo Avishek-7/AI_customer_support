@@ -70,11 +70,15 @@ class Logger {
 
     // In development, also store logs for debugging
     if (this.isDev && typeof window !== 'undefined') {
-      const logs = JSON.parse(sessionStorage.getItem('__app_logs') || '[]');
-      logs.push(entry);
-      // Keep only last 100 logs
-      if (logs.length > 100) logs.shift();
-      sessionStorage.setItem('__app_logs', JSON.stringify(logs));
+      try {
+        const logs = JSON.parse(sessionStorage.getItem('__app_logs') || '[]');
+        logs.push(entry);
+        // Keep only last 100 logs
+        if (logs.length > 100) logs.shift();
+        sessionStorage.setItem('__app_logs', JSON.stringify(logs));
+      } catch {
+        // Ignore storage errors so logging flow continues
+      }
     }
   }
 
@@ -111,7 +115,12 @@ class Logger {
   // Get all stored logs (for debugging)
   getLogs(): LogEntry[] {
     if (typeof window === 'undefined') return [];
-    return JSON.parse(sessionStorage.getItem('__app_logs') || '[]');
+    try {
+      return JSON.parse(sessionStorage.getItem('__app_logs') || '[]');
+    } catch {
+      sessionStorage.removeItem('__app_logs');
+      return [];
+    }
   }
 
   // Clear stored logs

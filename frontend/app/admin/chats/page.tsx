@@ -9,6 +9,7 @@ export default function AdminChatsPage() {
   const router = useRouter();
   const [chats, setChats] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const formatTimestamp = (value: string) => {
     const date = new Date(value);
@@ -31,9 +32,12 @@ export default function AdminChatsPage() {
       }
 
       try {
+        setError(null);
         const data = await getAdminChats(token);
         setChats(data.recent_chats || []);
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load chats";
+        setError(message);
         console.error("Failed to load chats:", err);
       } finally {
         setLoading(false);
@@ -55,6 +59,7 @@ export default function AdminChatsPage() {
           <p>Loading...</p>
         ) : (
           <div className="bg-gray-800 rounded-lg overflow-hidden">
+            {error && <p className="text-red-400 mb-4 px-4 pt-4">{error}</p>}
             <div className="p-4 bg-gray-700 flex items-center justify-between">
               <p className="font-semibold">Recent: {chats.length} chats</p>
             </div>
@@ -68,8 +73,14 @@ export default function AdminChatsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
-                  {chats.map((chat, idx) => (
-                    <tr key={idx} className="hover:bg-gray-700 transition">
+                  {chats.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-6 py-8 text-center text-gray-400">
+                        No chats
+                      </td>
+                    </tr>
+                  ) : chats.map((chat) => (
+                    <tr key={String(chat.id ?? `${String(chat.user_id)}-${String(chat.timestamp)}`)} className="hover:bg-gray-700 transition">
                       <td className="px-6 py-4 font-medium">User #{String(chat.user_id)}</td>
                       <td className="px-6 py-4 text-gray-300 max-w-md truncate">{String(chat.message)}</td>
                       <td className="px-6 py-4 text-gray-400">
