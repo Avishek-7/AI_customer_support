@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getAuthHeaders, getStoredToken } from "@/lib/auth";
 
 type UploadModalProps = {
   isOpen: boolean;
@@ -20,13 +21,8 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   const handleUpload = async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) {
       setError("Authentication required — please sign in");
       return;
@@ -57,9 +53,7 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
 
       const res = await fetch(`${API_BASE}/documents/upload`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: getAuthHeaders(token),
         signal: controller.signal,
         body: formData,
       });

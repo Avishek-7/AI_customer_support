@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminChats } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 export default function AdminChatsPage() {
   const router = useRouter();
@@ -18,14 +19,9 @@ export default function AdminChatsPage() {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   };
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   useEffect(() => {
     const loadChats = async () => {
-      const token = getToken();
+      const token = getStoredToken();
       if (!token) {
         router.push("/login");
         return;
@@ -33,7 +29,7 @@ export default function AdminChatsPage() {
 
       try {
         setError(null);
-        const data = await getAdminChats(token);
+        const data = await getAdminChats(token) as { recent_chats?: Array<Record<string, unknown>> };
         setChats(data.recent_chats || []);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to load chats";

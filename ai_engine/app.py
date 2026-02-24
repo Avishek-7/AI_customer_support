@@ -1,4 +1,5 @@
-from fastapi import FastAPI, BackgroundTasks, Request, Response, HTTPException
+from fastapi import FastAPI, BackgroundTasks, Request, Response, HTTPException, Depends
+from fastapi import Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -16,6 +17,7 @@ from vectorstore.vector_store import search_embeddings, load_index_and_metadata
 from utils.metrics import REQUEST_LATENCY, render_metrics
 from utils.config import get_settings
 import time
+import secrets
 
 # Initialize logging on startup
 init_logging()
@@ -150,6 +152,11 @@ def _ensure_debug_enabled() -> None:
         raise HTTPException(status_code=404, detail="Not found")
 
 
+def _require_internal_api_key(internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key")) -> None:
+    if not internal_api_key or not secrets.compare_digest(internal_api_key, settings.INTERNAL_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid internal API key")
+
+
 # Routes
 
 @app.get("/")
@@ -172,7 +179,11 @@ def health_check():
 
 # Index Document
 @app.post("/index-document", response_model=IndexDocumentResponse)
-async def index_document_endpoint(body: IndexDocumentRequest, background_task: BackgroundTasks):
+async def index_document_endpoint(
+    body: IndexDocumentRequest,
+    background_task: BackgroundTasks,
+    _auth: None = Depends(_require_internal_api_key),
+):
     """
     Index a new document:
     - chunk the content
@@ -218,7 +229,7 @@ async def index_document_endpoint(body: IndexDocumentRequest, background_task: B
 
 # Query RAG Pipeline
 @app.post("/query", response_model=QueryResponse)
-def query_endpoint(body: QueryRequest):
+def query_endpoint(body: QueryRequest, _auth: None = Depends(_require_internal_api_key)):
     """
     Run full RAG pipeline
     - embed query
@@ -268,7 +279,7 @@ def query_endpoint(body: QueryRequest):
 
 # Update Document
 @app.put("/update-document", response_model=IndexDocumentResponse)
-def update_document_endpoint(body: IndexDocumentRequest):
+def update_document_endpoint(body: IndexDocumentRequest, _auth: None = Depends(_require_internal_api_key)):
     """
     Update an existing document:
     - delete old embeddings
@@ -292,7 +303,7 @@ def update_document_endpoint(body: IndexDocumentRequest):
 
 # Delete Document
 @app.delete("/delete-document/{document_id}", response_model=DeleteDocumentResponse)
-def delete_document_endpoint(document_id: int):
+def delete_document_endpoint(document_id: int, _auth: None = Depends(_require_internal_api_key)):
     """
     Delete document embeddings from FAISS:
     - removes all chunks for this document_id
@@ -312,7 +323,7 @@ def delete_document_endpoint(document_id: int):
 
 # Diagnostic endpoint to inspect what chunks are stored for a document
 @app.get("/debug/document/{document_id}")
-def debug_document_chunks(document_id: int):
+def debug_document_chunks(document_id: int, _auth: None = Depends(_require_internal_api_key)):
     """
     Debug endpoint: show all chunks stored in FAISS for a given document_id.
     Use this to verify what content was actually indexed.
@@ -342,7 +353,7 @@ def debug_document_chunks(document_id: int):
 
 
 @app.get("/debug/all-documents")
-def debug_all_documents():
+def debug_all_documents(_auth: None = Depends(_require_internal_api_key)):
     """
     Debug endpoint: list all document_ids in FAISS and their chunk counts.
     """
@@ -370,7 +381,12 @@ def debug_all_documents():
 
 
 @app.get("/debug/search-preview")
-def debug_search_preview(query: str, document_id: int = None, k: int = 5):
+def debug_search_preview(
+    query: str,
+    document_id: int = None,
+    k: int = 5,
+    _auth: None = Depends(_require_internal_api_key),
+):
     """
     Debug endpoint: show what chunks would be retrieved for a query.
     Helps diagnose retrieval issues.
@@ -402,7 +418,7 @@ def debug_search_preview(query: str, document_id: int = None, k: int = 5):
 
 
 @app.post("/stream")
-async def stream_answer(body: QueryRequest):
+async def stream_answer(body: QueryRequest, _auth: None = Depends(_require_internal_api_key)):
     req_id = str(uuid.uuid4())[:8]
     set_request_id(req_id)
     
@@ -433,7 +449,7 @@ async def stream_answer(body: QueryRequest):
 
 
 @app.post("/inspect-context", response_model=InspectContextResponse)
-def inspect_context_endpoint(body: InspectContextRequest):
+def inspect_context_endpoint(body: InspectContextRequest, _auth: None = Depends(_require_internal_api_key)):
     """
     Inspect what chunks would be retrieved for a query without generating an answer.
     Useful for debugging retrieval and understanding what context the LLM would receive.
@@ -478,7 +494,7 @@ def inspect_context_endpoint(body: InspectContextRequest):
 
 
 @app.post("/critique", response_model=CritiqueResponse)
-def critique_endpoint(body: CritiqueRequest):
+def critique_endpoint(body: CritiqueRequest, _auth: None = Depends(_require_internal_api_key)):
     """
     Have the LLM critique/judge an existing answer for quality, accuracy, and relevance.
     Also includes hallucination detection scoring.
@@ -526,7 +542,7 @@ def critique_endpoint(body: CritiqueRequest):
 
 
 @app.post("/regenerate", response_model=RegenerateResponse)
-def regenerate_endpoint(body: RegenerateRequest):
+def regenerate_endpoint(body: RegenerateRequest, _auth: None = Depends(_require_internal_api_key)):
     """
     Regenerate an answer with specific user constraints.
     Examples: "make it shorter", "add more detail", "use simpler language", "be more technical"

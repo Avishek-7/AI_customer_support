@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getStoredToken } from "@/lib/auth";
 
 export default function Page() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = getStoredToken();
     if (token) {
       setIsAuthenticated(true);
       // Redirect to chat if already logged in

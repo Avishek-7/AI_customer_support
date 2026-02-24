@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Navigation from "@/components/Navigation";
+import { getStoredToken } from "@/lib/auth";
 import {
   getAdminStats,
   getAdminSystemStats,
@@ -15,14 +16,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   useEffect(() => {
     const loadDashboard = async () => {
-      const token = getToken();
+      const token = getStoredToken();
       if (!token) {
         router.push("/login");
         return;
@@ -33,7 +29,7 @@ export default function AdminDashboard() {
         const [statsData, systemData] = await Promise.all([
           getAdminStats(token),
           getAdminSystemStats(token),
-        ]);
+        ]) as [Record<string, number | undefined>, Record<string, number | undefined>];
         setStats(statsData);
         setSystemStats(systemData);
       } catch (err) {
@@ -72,7 +68,7 @@ export default function AdminDashboard() {
               onClick={async () => {
                 setLoading(true);
                 setError(null);
-                const token = getToken();
+                const token = getStoredToken();
                 if (!token) {
                   router.push("/login");
                   return;
@@ -81,7 +77,7 @@ export default function AdminDashboard() {
                   const [statsData, systemData] = await Promise.all([
                     getAdminStats(token),
                     getAdminSystemStats(token),
-                  ]);
+                  ]) as [Record<string, number | undefined>, Record<string, number | undefined>];
                   setStats(statsData);
                   setSystemStats(systemData);
                 } catch (retryErr) {

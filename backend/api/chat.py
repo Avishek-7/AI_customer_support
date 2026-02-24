@@ -250,6 +250,7 @@ async def chat_with_ai(
                         "document_ids": document_ids,  # None means search all
                         "k": 5,
                     },
+                    headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                     timeout=40.0,
                 )
                 ai_response.raise_for_status()
@@ -417,6 +418,7 @@ async def chat_stream(
                         "system_prompt": body.system_prompt,
                         "document_ids": document_ids,  # None means search all
                     },
+                    headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                     timeout=httpx.Timeout(300.0, connect=10.0, read=300.0, write=30.0),
                 ) as stream:
                     async for chunk in stream.aiter_lines():

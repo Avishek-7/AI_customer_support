@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { clearStoredToken, getAuthHeaders, getStoredToken } from "@/lib/auth";
 
 export default function Navigation() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getStoredToken();
     const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
     if (!token || !apiBase) {
       setIsAdmin(false);
@@ -19,7 +20,7 @@ export default function Navigation() {
     (async () => {
       try {
         const response = await fetch(`${apiBase}/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: getAuthHeaders(token),
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -56,7 +57,7 @@ export default function Navigation() {
         )}
         <button
           onClick={() => {
-            localStorage.removeItem("token");
+            clearStoredToken();
             window.location.href = "/login";
           }}
           className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 text-sm font-semibold"

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { docsLogger } from "@/lib/logger";
+import { getAuthHeaders, getStoredToken } from "@/lib/auth";
 import {
   updateDocument,
   searchDocuments,
@@ -39,20 +40,14 @@ export default function DocumentsPage() {
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
-  // Get token - only available on client side
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   const fetchDocs = async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     setLoading(true);
     docsLogger.info("Fetching documents");
     try {
       const res = await fetch(`${API_BASE}/documents/`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: getAuthHeaders(token),
       });
       if (!res.ok) {
         const errorText = await res.text();
@@ -76,6 +71,7 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     const token = getToken();
+    const token = getStoredToken();
     if (!token) {
       window.location.href = "/login";
       return;
@@ -85,7 +81,7 @@ export default function DocumentsPage() {
   }, []);
 
   const handleUpload = async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!file || !title.trim() || !token) return;
 
     setUploading(true);
@@ -100,7 +96,7 @@ export default function DocumentsPage() {
       const res = await fetch(`${API_BASE}/documents/upload`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`
+          ...getAuthHeaders(token),
         },
         body: formData,
       });
@@ -143,7 +139,7 @@ export default function DocumentsPage() {
   };
 
   const pollIndexStatus = async (docId: number) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     if (pollingIntervalRef.current) {
@@ -213,7 +209,7 @@ export default function DocumentsPage() {
       return;
     }
 
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     setSearching(true);

@@ -227,6 +227,7 @@ async def delete_document(
         try:
             resp = await client.delete(
                 f"{AI_ENGINE_URL}/delete-document/{doc.id}",
+                headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                 timeout=30.0
             )
             resp.raise_for_status()
@@ -420,6 +421,7 @@ async def reindex_document(
                     "title": doc.title,
                     "content": doc.content,
                 },
+                headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                 timeout=60.0,
             )
             resp.raise_for_status()

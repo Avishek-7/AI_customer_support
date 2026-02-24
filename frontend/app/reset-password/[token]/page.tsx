@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { resetPassword, verifyResetToken } from "@/lib/api";
 import { authLogger } from "@/lib/logger";
+import { setStoredToken } from "@/lib/auth";
 
 export default function ResetPasswordPage() {
   const params = useParams();
@@ -100,7 +101,7 @@ export default function ResetPasswordPage() {
           type: "success",
           text: "Password reset successfully! Redirecting to chat...",
         });
-        localStorage.setItem("token", response.token);
+        setStoredToken(response.token);
         redirectTimeoutRef.current = setTimeout(() => router.push("/chat"), 2000);
       } else if (response.detail) {
         setMessage({ type: "error", text: response.detail });

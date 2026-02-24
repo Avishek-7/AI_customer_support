@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jose import jwt, JWTError, ExpiredSignatureError
 from core.database import get_db
 from models.user import User
 from core.config import settings
@@ -89,11 +89,11 @@ def decode_access_token(token: str) -> Optional[str]:
         )
         user_id: str = payload.get("sub")
         if not user_id:
-            logger.warning("Token decoded but missing subject", extra={"payload": payload})
+            logger.warning("Token decoded but missing subject")
             return None
         logger.debug(f"Token decoded", extra={"user_id": user_id})
         return user_id
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         logger.warning("Token expired")
         return None
     except JWTError as e:
@@ -134,7 +134,7 @@ async def get_current_user(request: Request, token: str | None = Depends(oauth_s
         logger.warning("Authentication failed - malformed subject", extra={"user_id": user_id})
         raise credential_exception
 
-    result = await db.execute(select(User).filter(User.id == parsed_user_id))
+    result = await db.execute(select(User).where(User.id == parsed_user_id))
     user = result.scalar_one_or_none()
     if user is None:
         logger.warning(f"Authentication failed - user not found", extra={"user_id": user_id})

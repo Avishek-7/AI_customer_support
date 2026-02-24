@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminDocuments } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 export default function AdminDocumentsPage() {
   const router = useRouter();
@@ -11,14 +12,9 @@ export default function AdminDocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   useEffect(() => {
     const loadDocuments = async () => {
-      const token = getToken();
+      const token = getStoredToken();
       if (!token) {
         router.push("/login");
         return;
@@ -26,7 +22,7 @@ export default function AdminDocumentsPage() {
 
       try {
         setError(null);
-        const data = await getAdminDocuments(token);
+        const data = await getAdminDocuments(token) as { documents?: Array<Record<string, unknown>> };
         setDocuments(data.documents || []);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Failed to load documents";

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { authLogger } from "@/lib/logger";
+import { setStoredToken } from "@/lib/auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -56,7 +57,7 @@ export default function LoginPage() {
 
       if (data.token) {
         authLogger.info("Login successful", { emailHash });
-        localStorage.setItem("token", "__cookie_session__");
+        setStoredToken(String(data.token));
         window.location.href = "/chat";
       } else {
         authLogger.error("Login failed - missing token", { emailHash });

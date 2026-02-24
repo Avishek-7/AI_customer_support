@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { authLogger } from "@/lib/logger";
+import { setStoredToken } from "@/lib/auth";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -68,7 +69,7 @@ export default function RegisterPage() {
 
       if (data.token) {
         authLogger.info("Registration successful", { emailHash });
-        localStorage.setItem("token", String(data.token));
+        setStoredToken(String(data.token));
         alert("Registration successful!");
         window.location.href = "/chat";
       } else if (data.detail) {

@@ -2,7 +2,7 @@
 
 > **Version**: 1.0.0  
 > **Last Updated**: January 12, 2026  
-> **Base URL**: `http://localhost:8001`  
+> **Base URL**: `http://localhost:9000`  
 > **Service**: RAG Microservice (Embedding, Retrieval, Generation)
 
 This document defines the complete API contract for the AI Engine microservice. This is an internal service called by the Backend API.
@@ -38,8 +38,10 @@ The AI Engine is the core RAG (Retrieval-Augmented Generation) microservice that
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ❌ No (internal service) |
+| Auth Required | ✅ Yes (`X-Internal-API-Key`) for all service/debug endpoints |
 | Access | Backend API only |
+
+Public endpoints without internal key: `GET /`, `GET /health`, `GET /metrics`.
 
 ---
 

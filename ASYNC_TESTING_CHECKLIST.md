@@ -26,7 +26,7 @@ uvicorn main:app --reload --port 8000
 
 # Terminal 2 - AI Engine
 cd ai_engine
-uvicorn app:app --reload --port 8001
+uvicorn app:app --reload --port 9000
 ```
 
 ## Testing Checklist
@@ -175,7 +175,7 @@ curl -X GET http://localhost:8000/admin/documents \
 ```bash
 curl -X POST http://localhost:8000/vectors/sync \
   -H "Content-Type: application/json" \
-  -H "X-Internal-Token: <internal_service_token>" \
+  -H "X-Internal-API-Key: <internal_service_token>" \
   -d '{"metadata": [{"document_id": 1, "chunk_id": 0, "text": "Sample chunk"}]}'
 ```
 **Expected**: 200 OK with sync status
@@ -183,7 +183,7 @@ curl -X POST http://localhost:8000/vectors/sync \
 #### Get Vector Metadata
 ```bash
 curl -X GET http://localhost:8000/vectors/document/1 \
-  -H "X-Internal-Token: <internal_service_token>"
+  -H "X-Internal-API-Key: <internal_service_token>"
 ```
 **Expected**: 200 OK with chunk list
 
@@ -193,7 +193,7 @@ curl -X GET http://localhost:8000/vectors/document/1 \
 
 #### Index Document
 ```bash
-curl -X POST http://localhost:8001/index-document \
+curl -X POST http://localhost:9000/index-document \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <service_token>" \
   -d '{"document_id": 1, "title": "Test", "content": "Sample content"}'
@@ -202,7 +202,7 @@ curl -X POST http://localhost:8001/index-document \
 
 #### Query (Non-Streaming)
 ```bash
-curl -X POST http://localhost:8001/query \
+curl -X POST http://localhost:9000/query \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <service_token>" \
   -d '{"session_id": "test", "query": "What is this about?", "document_ids": [1], "k": 5}'
@@ -211,7 +211,7 @@ curl -X POST http://localhost:8001/query \
 
 #### Stream Query
 ```bash
-curl -X POST http://localhost:8001/stream \
+curl -X POST http://localhost:9000/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <service_token>" \
   -d '{"session_id": "test", "query": "Explain this", "document_ids": [1]}' \
@@ -221,7 +221,7 @@ curl -X POST http://localhost:8001/stream \
 
 #### Debug Documents
 ```bash
-curl -X GET http://localhost:8001/debug/all-documents \
+curl -X GET http://localhost:9000/debug/all-documents \
   -H "Authorization: Bearer <admin_or_internal_token>"
 ```
 **Expected**: 200 OK with indexed documents (must be restricted to admin/internal access)
@@ -354,7 +354,7 @@ If issues occur:
 
 ## Notes
 
-- FAISS operations are CPU-bound and acceptable in async routes
+- FAISS operations are CPU-bound; keep inline only for small-medium workloads (roughly <20–50ms CPU/request and <10–20 sustained QPS on a single-threaded async server), otherwise offload with `asyncio.to_thread(...)` or a worker pool
 - Background jobs (RQ) remain sync - run in separate workers
 - Database migration scripts may need separate async handling
 - Monitor memory usage with async connection pooling

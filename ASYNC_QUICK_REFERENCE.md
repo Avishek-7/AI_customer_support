@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).filter(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     return user
 ```
@@ -68,14 +68,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 # Convert URL: postgresql+asyncpg://...
 engine = create_async_engine(async_db_url)
-AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession)
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 async def get_db():
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
 ```
 
 ## Common Query Patterns
@@ -163,8 +164,9 @@ db.commit()
 # ✅ After
 result = await db.execute(select(User).filter(User.id == user_id))
 user = result.scalar_one_or_none()
-user.name = "New Name"
-await db.commit()
+if user is not None:
+    user.name = "New Name"
+    await db.commit()
 ```
 
 ## Route Declarations
@@ -181,7 +183,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 ```python
 @router.post("/register")
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).filter(User.email == user.email))
+    result = await db.execute(select(User).where(User.email == user.email))
     existing = result.scalar_one_or_none()
     # ...
 ```

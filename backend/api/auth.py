@@ -64,7 +64,7 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     logger.info(f"User registration attempt", extra={"user_email_hash": user_email_hash})
     
     # Check if user already exists
-    result = await db.execute(select(User).filter(User.email == user.email))
+    result = await db.execute(select(User).where(User.email == user.email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
         logger.warning(f"Registration failed - email exists", extra={"user_email_hash": user_email_hash})
@@ -115,7 +115,7 @@ async def login_user(
     logger.info(f"Login attempt", extra={"user_email_hash": user_email_hash})
     
     result = await db.execute(
-        select(User).filter(User.email == user_credentials.email)
+        select(User).where(User.email == user_credentials.email)
     )
     db_user = result.scalar_one_or_none()
 
@@ -172,7 +172,7 @@ async def reset_password(request: ResetPasswordRequest, http_request: Request, d
         logger.warning("Password reset failed - malformed token subject", extra={"user_id": user_id})
         raise ErrorHandler.bad_request("Invalid or expired token")
 
-    result = await db.execute(select(User).filter(User.id == parsed_user_id))
+    result = await db.execute(select(User).where(User.id == parsed_user_id))
     user = result.scalar_one_or_none()
     if not user:
         logger.warning("Password reset failed - user not found", extra={"user_id": user_id})
@@ -209,7 +209,7 @@ async def forgot_password(forgot_password_request: ForgotPasswordRequest, http_r
     rate_limit_key(key=f"forgot_password:{client_ip}", limit=5, window=3600)
 
     logger.info("Forgot password request", extra={"user_email_hash": user_email_hash, "client_ip": client_ip})
-    result = await db.execute(select(User).filter(User.email == forgot_password_request.email))
+    result = await db.execute(select(User).where(User.email == forgot_password_request.email))
     user = result.scalar_one_or_none()
     if not user:
         logger.warning("Forgot password failed - user not found", extra={"user_email_hash": user_email_hash, "client_ip": client_ip})
@@ -264,10 +264,10 @@ async def verify_reset_token(token: str, http_request: Request, db: AsyncSession
     except (TypeError, ValueError):
         raise ErrorHandler.bad_request("Invalid or expired token")
 
-    result = await db.execute(select(User).filter(User.id == parsed_user_id))
+    result = await db.execute(select(User).where(User.id == parsed_user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise ErrorHandler.not_found("User not found")
+        raise ErrorHandler.bad_request("Invalid or expired token")
 
     if not user.reset_token or user.reset_token != token or user.reset_token_used:
         raise ErrorHandler.bad_request("Invalid or expired token")

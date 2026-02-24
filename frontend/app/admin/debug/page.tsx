@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminConversationDebug } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 export default function AdminDebugPage() {
   const router = useRouter();
@@ -12,11 +13,6 @@ export default function AdminDebugPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!conversationId.trim()) {
@@ -24,7 +20,7 @@ export default function AdminDebugPage() {
       return;
     }
 
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) {
       router.push("/login");
       return;
@@ -40,7 +36,7 @@ export default function AdminDebugPage() {
         setError("Please enter a valid conversation ID");
         return;
       }
-      const data = await getAdminConversationDebug(parsedId, token);
+      const data = await getAdminConversationDebug(parsedId, token) as Record<string, unknown>;
       setDebugData(data);
     } catch (err) {
       setError("Failed to load conversation: " + String(err));

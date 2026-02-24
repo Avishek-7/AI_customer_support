@@ -47,12 +47,8 @@ Thumbs.db
 # FAISS data (large binary files)
 ai_engine/data/faiss_index.bin
 
-# Docker (temporary - not ready for production)
+# Docker (root-level local orchestration files)
 docker-compose.yml
-Dockerfile
-.dockerignore
-**/Dockerfile
-**/.dockerignore
 
 # Misc
 *.pem

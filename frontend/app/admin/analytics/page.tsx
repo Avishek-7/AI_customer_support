@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminUsageStats, getAdminSystemStats } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 export default function AdminAnalyticsPage() {
   const router = useRouter();
@@ -12,14 +13,9 @@ export default function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   useEffect(() => {
     const loadAnalytics = async () => {
-      const token = getToken();
+      const token = getStoredToken();
       if (!token) {
         router.push("/login");
         return;
@@ -30,7 +26,7 @@ export default function AdminAnalyticsPage() {
         const [usage, system] = await Promise.all([
           getAdminUsageStats(token),
           getAdminSystemStats(token),
-        ]);
+        ]) as [Array<Record<string, unknown>>, Record<string, number | undefined>];
         setUsageStats(usage || []);
         setSystemStats(system);
       } catch (err) {

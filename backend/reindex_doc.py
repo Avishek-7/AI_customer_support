@@ -7,6 +7,7 @@ import os
 import json
 from sqlalchemy import text
 from core.database import AsyncSessionLocal
+from core.config import settings
 
 async def trigger_indexing(doc_id: int):
     # Get document details
@@ -37,7 +38,8 @@ async def trigger_indexing(doc_id: int):
                         'document_id': document_id,
                         'title': title,
                         'content': content
-                    }
+                    },
+                    headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                 )
                 response.raise_for_status()
             except httpx.TimeoutException as e:

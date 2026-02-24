@@ -43,10 +43,12 @@ python test_vector_integration.py
 # Upload a document first through your app, then:
 
 # Check vector statistics
-curl http://localhost:8000/vectors/stats
+curl http://localhost:8000/vectors/stats \
+  -H "X-Internal-API-Key: <internal_service_token>"
 
 # View specific document's chunks
-curl http://localhost:8000/vectors/document/1
+curl http://localhost:8000/vectors/document/1 \
+  -H "X-Internal-API-Key: <internal_service_token>"
 ```
 
 ### Expected Response:
@@ -124,7 +126,7 @@ python -m migrations.add_vector_metadata
 ### Problem: Metadata out of sync
 ```bash
 # Check counts
-curl http://localhost:8000/vectors/stats  # PostgreSQL
+curl http://localhost:8000/vectors/stats -H "X-Internal-API-Key: <internal_service_token>"  # PostgreSQL
 # vs FAISS metadata.json entry count
 ```
 

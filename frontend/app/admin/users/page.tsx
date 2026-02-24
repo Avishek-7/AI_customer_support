@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getAdminUsers, createUser, deleteUser } from "@/lib/api";
+import { getStoredToken } from "@/lib/auth";
 
 type AdminUser = {
   id: number;
@@ -29,13 +30,8 @@ export default function AdminUsersPage() {
     role: "user",
   });
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   const reloadUsers = useCallback(async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) {
       router.push("/login");
       return;
@@ -44,7 +40,7 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getAdminUsers(token);
+      const data = await getAdminUsers(token) as AdminUser[];
       setUsers(data || []);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -62,7 +58,7 @@ export default function AdminUsersPage() {
 
   const handleCreateUser = async () => {
     if (isCreating) return;
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     if (!newUserData.email || !newUserData.password) {
@@ -73,7 +69,7 @@ export default function AdminUsersPage() {
     setIsCreating(true);
     try {
       await createUser(token, newUserData);
-      const data = await getAdminUsers(token);
+      const data = await getAdminUsers(token) as AdminUser[];
       setUsers(data || []);
       setShowCreateForm(false);
       setNewUserData({ email: "", password: "", name: "", role: "user" });
@@ -85,7 +81,7 @@ export default function AdminUsersPage() {
   };
 
   const handleDeleteUser = async (userId: number) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     if (!confirm("Are you sure you want to delete this user?")) return;

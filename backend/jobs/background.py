@@ -52,6 +52,7 @@ async def index_document_task(document_id: int) -> None:
                         "title": document.title,
                         "content": document.content,
                     },
+                    headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                 )
                 response.raise_for_status()
                 result_data = response.json()

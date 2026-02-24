@@ -1,7 +1,7 @@
 # Async Migration Summary
 
 ## Overview
-Fully migrated both backend and AI engine to follow async programming rules, eliminating blocking I/O operations in async contexts.
+Migrated backend and AI engine to async-first I/O patterns and removed blocking calls from async request paths.
 
 ## Backend Changes
 
@@ -84,7 +84,7 @@ Fully migrated both backend and AI engine to follow async programming rules, eli
 
 ```python
 # Database queries
-result = await db.execute(select(Model).filter(...))
+result = await db.execute(select(Model).where(...))
 obj = result.scalar_one_or_none()  # or .scalars().all()
 
 # Commits and refreshes
@@ -94,6 +94,14 @@ await db.refresh(obj)
 # HTTP calls
 async with httpx.AsyncClient() as client:
     response = await client.post(url, json=data)
+
+# Rollback on failure
+try:
+   ...
+   await db.commit()
+except Exception:
+   await db.rollback()
+   raise
 ```
 
 ## Migration Checklist
@@ -107,6 +115,7 @@ async with httpx.AsyncClient() as client:
 - [x] Permission helpers (async ownership checks)
 - [x] AI engine HTTP calls (httpx.AsyncClient)
 - [x] Dependencies updated (asyncpg, httpx)
+- [ ] Async audit of remaining DB helper modules (e.g., usage tracking helpers)
 
 ## Testing Steps
 
@@ -120,7 +129,7 @@ async with httpx.AsyncClient() as client:
    ```
 
 2. **Update database connection:**
-   - Ensure `DATABASE_URL` in `.env` is compatible (asyncpg supports same format)
+   - Ensure `DATABASE_URL` in `.env` uses async driver scheme: `postgresql+asyncpg://...`
    - No schema changes needed
 
 3. **Run backend:**
@@ -132,7 +141,7 @@ async with httpx.AsyncClient() as client:
 4. **Run AI engine:**
    ```bash
    cd ai_engine
-   uvicorn app:app --port 8001 --reload
+   uvicorn app:app --port 9000 --reload
    ```
 
 5. **Test endpoints:**
@@ -174,5 +183,6 @@ async with httpx.AsyncClient() as client:
 - **Action required:** all database helper functions (including helpers like `utils/usage_tracker.py`) MUST be async-safe when invoked from async routes; sync DB calls in async paths block the event loop.
    - Audit step: identify all helper functions called from async contexts.
    - Verification: run async route performance tests and confirm no blocking DB helper calls remain.
+- Prefer lifecycle-managed shared `httpx.AsyncClient` instances for high-throughput service-to-service calls instead of creating a fresh client per request.
 - Background jobs (RQ/Redis) remain sync - acceptable as they run in separate workers
 - FAISS operations (embedding, search) may run inline only for small-medium workloads (roughly <20–50ms CPU per request and <10–20 sustained QPS on a single-threaded async server). Above that, offload with `asyncio.to_thread(...)` or a worker pool to avoid event-loop blocking.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getAuthHeaders, getStoredToken } from "@/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -21,7 +22,7 @@ export default function ChatHistoryPage() {
         return;
       }
 
-      const token = localStorage.getItem("token");
+      const token = getStoredToken();
       if (!token) {
         console.error("No auth token found");
         setHistory([]);
@@ -30,7 +31,7 @@ export default function ChatHistoryPage() {
 
       try {
         const res = await fetch(`${API_BASE}/chat/history`, {
-          headers: { "Authorization": `Bearer ${token}` }
+          headers: getAuthHeaders(token)
         });
 
         if (!res.ok) {

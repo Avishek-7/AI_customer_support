@@ -388,6 +388,7 @@ async def debug_conversation(
                 search_response = await client.get(
                     f"{AI_ENGINE_URL}/debug/search-preview",
                     params={"query": last_user_msg.content, "k": 5},
+                    headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                     timeout=30.0
                 )
                 search_data = _safe_json(search_response, "debug/search-preview")
@@ -401,6 +402,7 @@ async def debug_conversation(
                             "answer": last_assistant_msg.content,
                             "sources": search_data.get("chunks", [])
                         },
+                        headers={"X-Internal-API-Key": settings.INTERNAL_API_KEY},
                         timeout=30.0
                     )
                     critique_data = _safe_json(critique_response, "critique")

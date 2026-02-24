@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Navigation from "@/components/Navigation";
 import { getCurrentUser, updateUser } from "@/lib/api";
 import { authLogger } from "@/lib/logger";
+import { getStoredToken } from "@/lib/auth";
 
 type User = {
   id: number;
@@ -12,6 +13,8 @@ type User = {
   email: string;
   role: string;
 };
+
+type UserApiResponse = User & { detail?: string };
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -28,14 +31,9 @@ export default function ProfilePage() {
     confirmPassword: "",
   });
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   useEffect(() => {
     const loadUser = async () => {
-      const token = getToken();
+      const token = getStoredToken();
       if (!token) {
         router.push("/login");
         return;
@@ -44,7 +42,7 @@ export default function ProfilePage() {
       authLogger.info("Loading user profile");
       try {
         setError(null);
-        const response = await getCurrentUser(token);
+        const response = await getCurrentUser(token) as UserApiResponse;
         if (response?.id) {
           setUser(response);
           setFormData({
@@ -70,7 +68,7 @@ export default function ProfilePage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token = getToken();
+    const token = getStoredToken();
     if (!user || !token) return;
 
     // Validate
@@ -101,8 +99,9 @@ export default function ProfilePage() {
       }
 
       const response = await updateUser(user.id, token, updateData);
-      if (response.id) {
-        setUser(response);
+      const typedResponse = response as UserApiResponse;
+      if (typedResponse.id) {
+        setUser(typedResponse);
         setFormData({
           ...formData,
           name: trimmedName,
@@ -113,9 +112,9 @@ export default function ProfilePage() {
         setMessage({ type: "success", text: "Profile updated successfully" });
         authLogger.info("User profile updated", { userId: user.id });
         setIsEditing(false);
-      } else if (response.detail) {
-        setMessage({ type: "error", text: response.detail });
-        authLogger.warn("Profile update failed", { error: response.detail });
+      } else if (typedResponse.detail) {
+        setMessage({ type: "error", text: typedResponse.detail });
+        authLogger.warn("Profile update failed", { error: typedResponse.detail });
       }
     } catch (err) {
       setMessage({ type: "error", text: "Failed to update profile" });

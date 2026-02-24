@@ -2,10 +2,74 @@
  * Comprehensive API client for all backend endpoints
  */
 
+import { getAuthHeaders } from "./auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 if (!API_BASE) {
     throw new Error("NEXT_PUBLIC_API_URL is required for frontend API client");
+}
+
+type RequestOptions = {
+    method?: string;
+    token?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+    throwOnError?: boolean;
+    allowNoContent?: boolean;
+};
+
+async function parseResponseBody(response: Response): Promise<unknown> {
+    if (response.status === 204) {
+        return null;
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+        return response.json().catch(() => ({}));
+    }
+
+    const text = await response.text().catch(() => "");
+    return text || null;
+}
+
+function buildRequestHeaders(token?: string, extraHeaders?: Record<string, string>, hasBody?: boolean): Record<string, string> {
+    const authHeaders = getAuthHeaders(token);
+    const jsonHeaders: Record<string, string> = {};
+    if (hasBody) {
+        jsonHeaders["Content-Type"] = "application/json";
+    }
+
+    return {
+        ...jsonHeaders,
+        ...authHeaders,
+        ...(extraHeaders || {}),
+    };
+}
+
+async function requestJson<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+    const { method = "GET", token, body, headers, throwOnError = false, allowNoContent = false } = options;
+    const response = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers: buildRequestHeaders(token, headers, body !== undefined),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    const payload = await parseResponseBody(response);
+
+    if (!response.ok && throwOnError) {
+        const detail =
+            typeof payload === "string"
+                ? payload
+                : (payload as { detail?: string } | null)?.detail || response.statusText;
+        throw new Error(`Request failed (${response.status}): ${detail}`);
+    }
+
+    if (response.status === 204 && allowNoContent) {
+        return null as T;
+    }
+
+    return payload as T;
 }
 
 // ============================================================================
@@ -13,29 +77,18 @@ if (!API_BASE) {
 // ============================================================================
 
 export async function forgotPassword(email: string) {
-    const response = await fetch(`${API_BASE}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-    });
-    return response.json();
+    return requestJson("/auth/forgot-password", { method: "POST", body: { email } });
 }
 
 export async function resetPassword(token: string, newPassword: string) {
-    const response = await fetch(`${API_BASE}/auth/reset-password`, {
+    return requestJson("/auth/reset-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, new_password: newPassword }),
+        body: { token, new_password: newPassword },
     });
-    return response.json();
 }
 
 export async function verifyResetToken(token: string) {
-    const response = await fetch(`${API_BASE}/auth/reset-password/${token}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-    });
-    return response.json();
+    return requestJson(`/auth/reset-password/${token}`);
 }
 
 // ============================================================================
@@ -43,10 +96,7 @@ export async function verifyResetToken(token: string) {
 // ============================================================================
 
 export async function getCurrentUser(token: string) {
-    const response = await fetch(`${API_BASE}/users/me`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/users/me", { token });
 }
 
 export async function updateUser(userId: number, token: string, data: {
@@ -55,29 +105,15 @@ export async function updateUser(userId: number, token: string, data: {
     password?: string;
     role?: string;
 }) {
-    const response = await fetch(`${API_BASE}/users/${userId}`, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify(data),
-    });
-    return response.json();
+    return requestJson(`/users/${userId}`, { method: "PUT", token, body: data });
 }
 
 export async function getAllUsers(token: string) {
-    const response = await fetch(`${API_BASE}/users/`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/users/", { token });
 }
 
 export async function getUser(userId: number, token: string) {
-    const response = await fetch(`${API_BASE}/users/${userId}`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/users/${userId}`, { token });
 }
 
 export async function createUser(token: string, data: {
@@ -86,38 +122,16 @@ export async function createUser(token: string, data: {
     name?: string;
     role?: string;
 }) {
-    const response = await fetch(`${API_BASE}/users/`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify(data),
-    });
-    return response.json();
+    return requestJson("/users/", { method: "POST", token, body: data });
 }
 
 export async function deleteUser(userId: number, token: string) {
-    const response = await fetch(`${API_BASE}/users/${userId}`, {
+    return requestJson(`/users/${userId}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` },
+        token,
+        throwOnError: true,
+        allowNoContent: true,
     });
-    if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(`Failed to delete user (${response.status}): ${errorText || response.statusText}`);
-    }
-
-    if (response.status === 204) {
-        return null;
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        return response.json();
-    }
-
-    const text = await response.text().catch(() => "");
-    return text || null;
 }
 
 // ============================================================================
@@ -125,74 +139,42 @@ export async function deleteUser(userId: number, token: string) {
 // ============================================================================
 
 export async function createConversation(token: string, title?: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations`, {
+    return requestJson("/chat/conversations", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ title: title || "New Conversation" }),
+        token,
+        body: { title: title || "New Conversation" },
     });
-    return response.json();
 }
 
 export async function getAllConversations(token: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    if (!response.ok) {
-        throw new Error(`Failed to load conversations (${response.status})`);
-    }
-    return response.json();
+    return requestJson("/chat/conversations", { token, throwOnError: true });
 }
 
 export async function getConversation(conversationId: number, token: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/chat/conversations/${conversationId}`, { token });
 }
 
 export async function updateConversation(conversationId: number, token: string, title: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, {
+    return requestJson(`/chat/conversations/${conversationId}`, {
         method: "PATCH",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ title }),
+        token,
+        body: { title },
     });
-    return response.json();
 }
 
 export async function deleteConversation(conversationId: number, token: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, {
+    return requestJson(`/chat/conversations/${conversationId}`, {
         method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` },
+        token,
+        allowNoContent: true,
     });
-    if (response.status === 204) {
-        return null;
-    }
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        return response.json();
-    }
-    const text = await response.text().catch(() => "");
-    return text || null;
 }
 
 export async function getConversationMessages(conversationId: number, token: string) {
-    const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}/messages`, {
-        headers: { "Authorization": `Bearer ${token}` },
+    return requestJson(`/chat/conversations/${conversationId}/messages`, {
+        token,
+        throwOnError: true,
     });
-    
-    if (!response.ok) {
-        const error = await response.text();
-        console.error(`Failed to get conversation messages: ${response.status}`, error);
-        throw new Error(`Failed to load conversation: ${response.status} - ${error}`);
-    }
-    
-    return response.json();
 }
 
 // ============================================================================
@@ -208,20 +190,16 @@ export async function sendChatMessage(
         document_ids?: number[];
     }
 ) {
-    const response = await fetch(`${API_BASE}/chat/chat`, {
+    return requestJson("/chat/chat", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        token,
+        body: {
             message,
             conversation_id: conversationId,
             ...(data?.system_prompt && { system_prompt: data.system_prompt }),
             ...(data?.document_ids && { document_ids: data.document_ids }),
-        }),
+        },
     });
-    return response.json();
 }
 
 export async function streamChatMessage(
@@ -236,10 +214,7 @@ export async function streamChatMessage(
 ) {
     const response = await fetch(`${API_BASE}/chat/stream`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
+        headers: buildRequestHeaders(token, undefined, true),
         body: JSON.stringify({
             message,
             conversation_id: conversationId,
@@ -292,42 +267,19 @@ export async function updateDocument(
     token: string,
     data: { title?: string; content?: string }
 ) {
-    const response = await fetch(`${API_BASE}/documents/${docId}`, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify(data),
-    });
-    return response.json();
+    return requestJson(`/documents/${docId}`, { method: "PUT", token, body: data });
 }
 
 export async function searchDocuments(query: string, token: string) {
-    const response = await fetch(`${API_BASE}/documents/search`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query }),
-    });
-    return response.json();
+    return requestJson("/documents/search", { method: "POST", token, body: { query } });
 }
 
 export async function reindexDocument(docId: number, token: string) {
-    const response = await fetch(`${API_BASE}/documents/${docId}/reindex`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/documents/${docId}/reindex`, { method: "POST", token });
 }
 
 export async function getDocumentStatus(docId: number, token: string) {
-    const response = await fetch(`${API_BASE}/documents/status/${docId}`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/documents/status/${docId}`, { token });
 }
 
 // ============================================================================
@@ -335,59 +287,35 @@ export async function getDocumentStatus(docId: number, token: string) {
 // ============================================================================
 
 export async function getAdminUsers(token: string) {
-    const response = await fetch(`${API_BASE}/admin/users`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/users", { token });
 }
 
 export async function getAdminUsageStats(token: string) {
-    const response = await fetch(`${API_BASE}/admin/usage-stats`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/usage-stats", { token });
 }
 
 export async function getAdminSystemStats(token: string) {
-    const response = await fetch(`${API_BASE}/admin/system-stats`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/system-stats", { token });
 }
 
 export async function getAdminUserUsage(userId: number, token: string) {
-    const response = await fetch(`${API_BASE}/admin/users/${userId}/usage`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/admin/users/${userId}/usage`, { token });
 }
 
 export async function getAdminDocuments(token: string) {
-    const response = await fetch(`${API_BASE}/admin/documents`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/documents", { token });
 }
 
 export async function getAdminChats(token: string) {
-    const response = await fetch(`${API_BASE}/admin/chats`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/chats", { token });
 }
 
 export async function getAdminStats(token: string) {
-    const response = await fetch(`${API_BASE}/admin/stats`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson("/admin/stats", { token });
 }
 
 export async function getAdminConversationDebug(conversationId: number, token: string) {
-    const response = await fetch(`${API_BASE}/admin/debug/conversations/${conversationId}`, {
-        headers: { "Authorization": `Bearer ${token}` },
-    });
-    return response.json();
+    return requestJson(`/admin/debug/conversations/${conversationId}`, { token });
 }
 
 // ============================================================================
@@ -395,11 +323,9 @@ export async function getAdminConversationDebug(conversationId: number, token: s
 // ============================================================================
 
 export async function getVectorMetadata(docId: number) {
-    const response = await fetch(`${API_BASE}/vectors/document/${docId}`);
-    return response.json();
+    return requestJson(`/vectors/document/${docId}`);
 }
 
 export async function getVectorStats() {
-    const response = await fetch(`${API_BASE}/vectors/stats`);
-    return response.json();
+    return requestJson("/vectors/stats");
 }

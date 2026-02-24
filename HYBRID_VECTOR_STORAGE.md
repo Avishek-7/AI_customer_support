@@ -106,10 +106,12 @@ Upload a document through the frontend or API, and check:
 
 ```bash
 # Check vector stats
-curl http://localhost:8000/vectors/stats
+curl http://localhost:8000/vectors/stats \
+    -H "X-Internal-API-Key: <internal_service_token>"
 
 # Check specific document vectors
-curl http://localhost:8000/vectors/document/1
+curl http://localhost:8000/vectors/document/1 \
+    -H "X-Internal-API-Key: <internal_service_token>"
 ```
 
 ## Benefits
@@ -199,6 +201,7 @@ If FAISS and DB get out of sync:
 # Re-sync all metadata from FAISS to DB
 curl -X POST http://localhost:8000/vectors/sync \
   -H "Content-Type: application/json" \
+    -H "X-Internal-API-Key: <internal_service_token>" \
   -d @data/metadata.json
 ```
 
@@ -232,7 +235,8 @@ Optional but recommended: `title` (string).
 curl http://localhost:9000/health
 
 # Database count
-curl http://localhost:8000/vectors/stats
+curl http://localhost:8000/vectors/stats \
+    -H "X-Internal-API-Key: <internal_service_token>"
 ```
 
 ### Clear All Vectors

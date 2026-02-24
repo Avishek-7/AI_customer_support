@@ -8,6 +8,7 @@ import ConversationList from "./../../components/ConversationList";
 import Navigation from "./../../components/Navigation";
 import ResizableSidebar from "./../../components/ResizableSidebar";
 import { chatLogger } from "@/lib/logger";
+import { clearStoredToken, getAuthHeaders, getStoredToken } from "@/lib/auth";
 import {
   streamChatMessage,
   getAllConversations,
@@ -49,14 +50,9 @@ export default function ChatPage() {
   const chatRef = useRef<HTMLDivElement>(null);
   const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-  const getToken = () => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("token");
-  };
-
   // Fetch conversations
   const fetchConversations = useCallback(async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     setLoadingConversations(true);
     try {
@@ -67,7 +63,7 @@ export default function ChatPage() {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("401")) {
         chatLogger.warn("Token expired while fetching conversations, redirecting to login");
-        localStorage.removeItem("token");
+        clearStoredToken();
         window.location.href = "/login";
         return;
       }
@@ -79,17 +75,17 @@ export default function ChatPage() {
 
   // Fetch documents
   const fetchDocs = useCallback(async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     chatLogger.debug("Fetching documents");
     try {
       const res = await fetch(`${API_BASE}/documents/`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: getAuthHeaders(token),
       });
 
       if (res.status === 401) {
         chatLogger.warn("Token expired, redirecting to login");
-        localStorage.removeItem("token");
+        clearStoredToken();
         window.location.href = "/login";
         return;
       }
@@ -113,7 +109,7 @@ export default function ChatPage() {
   // Load conversation messages
   const loadConversation = useCallback(
     async (convId: number) => {
-      const token = getToken();
+    const token = getStoredToken();
       if (!token) return;
       
       chatLogger.info("Loading conversation", { conversationId: convId });
@@ -148,7 +144,7 @@ export default function ChatPage() {
 
   // Create new conversation
   const handleCreateConversation = async () => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     try {
       const data = await createConversation(token);
@@ -163,7 +159,7 @@ export default function ChatPage() {
 
   // Rename conversation
   const handleRenameConversation = async (convId: number, title: string) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     try {
       await updateConversation(convId, token, title);
@@ -183,7 +179,7 @@ export default function ChatPage() {
 
   // Delete conversation
   const handleDeleteConversation = async (convId: number) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
     try {
       await deleteConversation(convId, token);
@@ -200,7 +196,7 @@ export default function ChatPage() {
 
   // Check authentication and load data on mount
   useEffect(() => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) {
       window.location.href = "/login";
       return;
@@ -238,7 +234,7 @@ export default function ChatPage() {
   }
 
   async function handleSend(userMessage: string) {
-    const token = getToken();
+    const token = getStoredToken();
     if (!userMessage.trim() || !token) return;
 
     chatLogger.info("Sending chat message", {
