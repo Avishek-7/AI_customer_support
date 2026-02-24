@@ -7,6 +7,16 @@ class UserCreate(BaseModel):
     password: str
     full_name: str | None = None
 
+    @field_validator("password")
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain a number")
+        return v
+
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -27,12 +37,13 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class UserCreateAdmin(BaseModel):
     email: EmailStr
     password: str
-    name: Optional[str] = None
+    full_name: Optional[str] = Field(default=None, alias="name")
     role: Optional[str] = "user"  # Only applied if admin creates
 
     @field_validator("password")

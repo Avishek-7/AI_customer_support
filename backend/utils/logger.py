@@ -97,6 +97,10 @@ def init_logging(
     root = logging.getLogger()
     # Remove existing handlers to avoid duplicate logs if init called multiple times
     for h in list(root.handlers):
+        try:
+            h.close()
+        except Exception:
+            pass
         root.removeHandler(h)
 
     env_level = os.getenv("LOG_LEVEL", "INFO").upper()

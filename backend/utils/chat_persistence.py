@@ -66,6 +66,7 @@ async def save_chat_turn(
             conversation_id=conversation_id,
             role="user",
             content=user_message,
+            timestamp=timestamp,
             created_at=timestamp
         )
         assistant_chat = ChatHistory(
@@ -73,6 +74,7 @@ async def save_chat_turn(
             conversation_id=conversation_id,
             role="assistant",
             content=assistant_response,
+            timestamp=timestamp,
             created_at=timestamp
         )
         

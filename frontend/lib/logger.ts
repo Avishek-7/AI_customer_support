@@ -38,10 +38,27 @@ const levelIcons: Record<LogLevel, string> = {
 class Logger {
   private module: string;
   private isDev: boolean;
+  private isEnabled: boolean;
+  private sensitiveKeyPattern = /(email|token|password|secret|ssn|userid|user_id|authorization|cookie)/i;
 
   constructor(module: string = 'app') {
     this.module = module;
     this.isDev = process.env.NODE_ENV !== 'production';
+    const explicitEnable = process.env.NEXT_PUBLIC_ENABLE_CLIENT_LOGS === 'true';
+    this.isEnabled = this.isDev || explicitEnable;
+  }
+
+  private sanitizeData(data?: Record<string, unknown>): Record<string, unknown> | undefined {
+    if (!data) return data;
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (this.sensitiveKeyPattern.test(key)) {
+        sanitized[key] = '[REDACTED]';
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
   }
 
   private formatLog(level: LogLevel, message: string, data?: Record<string, unknown>): LogEntry {
@@ -55,15 +72,20 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: Record<string, unknown>) {
-    const entry = this.formatLog(level, message, data);
+    if (!this.isEnabled) {
+      return;
+    }
+
+    const sanitizedData = this.sanitizeData(data);
+    const entry = this.formatLog(level, message, sanitizedData);
     const color = levelColors[level];
     const icon = levelIcons[level];
     
     const prefix = `%c${icon} [${entry.timestamp.split('T')[1].split('.')[0]}] [${this.module}]`;
     const style = `color: ${color}; font-weight: bold;`;
     
-    if (data && Object.keys(data).length > 0) {
-      console[level === 'debug' ? 'log' : level](prefix, style, message, data);
+    if (sanitizedData && Object.keys(sanitizedData).length > 0) {
+      console[level === 'debug' ? 'log' : level](prefix, style, message, sanitizedData);
     } else {
       console[level === 'debug' ? 'log' : level](prefix, style, message);
     }
@@ -101,13 +123,18 @@ class Logger {
   }
 
   // Special method for logging API responses - specifically for answer comparison
-  logAnswer(source: string, answer: string, metadata?: Record<string, unknown>) {
+  logAnswer(source: string, answer: string, metadata?: Record<string, unknown>, storeFullAnswer = false) {
     const truncated = answer.length > 500 ? `${answer.slice(0, 500)}...` : answer;
-    this.info(`=== ${source} ===`, {
-      answer,
+    const payload: Record<string, unknown> = {
       answer_preview: truncated,
       answer_length: answer.length,
       ...metadata,
+    };
+    if (storeFullAnswer) {
+      payload.answer = answer;
+    }
+    this.info(`=== ${source} ===`, {
+      ...payload,
     });
     console.log(`%c[${source}] ${truncated}`, 'color: #10b981; font-weight: bold;');
   }

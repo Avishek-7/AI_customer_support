@@ -259,7 +259,17 @@ export default function ProfilePage() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsEditing(false)}
+                onClick={() => {
+                  if (user) {
+                    setFormData({
+                      name: user.name || "",
+                      email: user.email || "",
+                      password: "",
+                      confirmPassword: "",
+                    });
+                  }
+                  setIsEditing(false);
+                }}
                 className="flex-1 bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-semibold"
               >
                 Cancel

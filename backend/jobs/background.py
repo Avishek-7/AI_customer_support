@@ -73,7 +73,8 @@ async def index_document_task(document_id: int) -> None:
         except httpx.HTTPStatusError as e:
             logger.error(
                 f"AI engine indexing failed",
-                extra={"document_id": document_id, "status": e.response.status_code}
+                extra={"document_id": document_id, "status": e.response.status_code},
+                exc_info=True,
             )
             try:
                 await db.execute(

@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class ConversationCreate(BaseModel):
-    title: Optional[str] = "New Conversation"
+    title: str = "New Conversation"
 
 class ConversationResponse(BaseModel):
     id: int

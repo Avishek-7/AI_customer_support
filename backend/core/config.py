@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     AI_ENGINE_URL: str
 
     # Redis (for rate limiting)
-    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     # Chat response cache
     CACHE_ENABLED: bool = True
@@ -29,13 +29,13 @@ class Settings(BaseSettings):
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 1025
     SMTP_TIMEOUT: int = 10
-    SMTP_USE_TLS: bool = True
+    SMTP_USE_TLS: bool = False
     SMTP_USER: Optional[str] = None
     SMTP_PASS: Optional[str] = None
     SMTP_FROM: str = "AI Customer Support Backend <no-reply@local.test>"
 
     # Internal service authentication (AI engine -> backend callbacks)
-    INTERNAL_API_KEY: str = "dev-internal-api-key"
+    INTERNAL_API_KEY: str
 
     class Config:
         env_file = ".env"

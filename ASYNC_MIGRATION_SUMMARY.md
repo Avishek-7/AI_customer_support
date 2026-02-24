@@ -78,7 +78,7 @@ Fully migrated both backend and AI engine to follow async programming rules, eli
 1. **No blocking DB calls in async routes**: All `Session` operations replaced with `AsyncSession` + await
 2. **No blocking HTTP in async contexts**: All `requests` replaced with `httpx.AsyncClient`
 3. **Proper async propagation**: All functions calling async operations are themselves async
-4. **Event loop friendly**: I/O operations use `await`; CPU-bound FAISS/embedding ops should be offloaded with `asyncio.to_thread(...)` when used from async request handlers
+4. **Event loop friendly**: I/O operations use `await`; offload CPU-bound FAISS/embedding ops with `asyncio.to_thread(...)` or a worker pool when per-request CPU work is no longer trivial (for example search/embedding CPU time consistently above ~20–50ms, or sustained load above ~10–20 QPS on a single-threaded async server)
 
 ### Key Patterns Used
 
@@ -160,7 +160,7 @@ async with httpx.AsyncClient() as client:
 **Solution:** Using `async with` context manager ensures proper cleanup
 
 ### Issue: Blocking FAISS operations
-**Solution:** FAISS and embedding operations are CPU-bound and can block the event loop under load. Offload with `await asyncio.to_thread(...)` (for example around `model.embed(...)` / `vector_store.search(...)`) to keep request handling responsive and improve concurrency scaling.
+**Solution:** FAISS and embedding operations are CPU-bound and can block the event loop under load, which increases tail latency (p95/p99) and reduces concurrency. Treat “small-medium workloads” as roughly per-search CPU under ~20–50ms or sustained load under ~10–20 QPS on a single-threaded async server. If expected per-request CPU time or concurrent load exceeds those heuristics—or you observe rising latency under load—offload with `await asyncio.to_thread(...)` (for example around `model.embed(...)` / `vector_store.search(...)`) or move this work to a worker pool.
 
 ## Performance Benefits
 
@@ -175,4 +175,4 @@ async with httpx.AsyncClient() as client:
    - Audit step: identify all helper functions called from async contexts.
    - Verification: run async route performance tests and confirm no blocking DB helper calls remain.
 - Background jobs (RQ/Redis) remain sync - acceptable as they run in separate workers
-- FAISS operations (embedding, search) are CPU-bound and acceptable in async routes for small-medium workloads
+- FAISS operations (embedding, search) may run inline only for small-medium workloads (roughly <20–50ms CPU per request and <10–20 sustained QPS on a single-threaded async server). Above that, offload with `asyncio.to_thread(...)` or a worker pool to avoid event-loop blocking.

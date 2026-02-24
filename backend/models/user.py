@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from core.database import Base
 
@@ -11,6 +11,7 @@ class User(Base):
     password_hash = Column(String)
     role = Column(String, default="user")  # user | admin
     reset_token = Column(String, nullable=True)
+    reset_token_expires_at = Column(DateTime, nullable=True)
     reset_token_used = Column(Boolean, default=False)
     
     documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")

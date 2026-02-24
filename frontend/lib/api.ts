@@ -102,7 +102,22 @@ export async function deleteUser(userId: number, token: string) {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` },
     });
-    return response.json();
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(`Failed to delete user (${response.status}): ${errorText || response.statusText}`);
+    }
+
+    if (response.status === 204) {
+        return null;
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+        return response.json();
+    }
+
+    const text = await response.text().catch(() => "");
+    return text || null;
 }
 
 // ============================================================================
@@ -155,7 +170,15 @@ export async function deleteConversation(conversationId: number, token: string) 
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` },
     });
-    return response.json();
+    if (response.status === 204) {
+        return null;
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+        return response.json();
+    }
+    const text = await response.text().catch(() => "");
+    return text || null;
 }
 
 export async function getConversationMessages(conversationId: number, token: string) {
@@ -242,17 +265,21 @@ export async function streamChatMessage(
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
-    while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-            onChunk(decoder.decode(value, { stream: true }));
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+                onChunk(decoder.decode(value, { stream: true }));
+            }
         }
-    }
 
-    const remaining = decoder.decode();
-    if (remaining) {
-        onChunk(remaining);
+        const remaining = decoder.decode();
+        if (remaining) {
+            onChunk(remaining);
+        }
+    } finally {
+        await reader.cancel().catch(() => {});
     }
 }
 

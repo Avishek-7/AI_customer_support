@@ -1,8 +1,8 @@
-# Hybrid Vector Storage - Integration Complete ✅
+# Hybrid Vector Storage - Integration Status Review ⚠️
 
 ## What Was Implemented
 
-The hybrid vector storage system is now **fully integrated** into your AI Customer Support project. Here's what was added:
+The hybrid vector storage system is integrated with core sync APIs and storage paths. This summary distinguishes implemented behavior from recommended hardening.
 
 ## 📁 Files Modified/Created
 
@@ -116,7 +116,7 @@ curl http://localhost:8000/vectors/stats
 - **FAISS**: Fast vector similarity search (in-memory, file-backed)
 - **PostgreSQL**: Persistent metadata with relationships
 
-### 4. **Synchronization Behavior**
+### 2. **Synchronization Behavior**
 - FAISS operations trigger metadata sync to database
 - Current behavior is best-effort/eventual consistency (not distributed atomic commit)
 - Failures are logged and should be monitored with reconciliation alerts
@@ -133,12 +133,11 @@ curl http://localhost:8000/vectors/stats
 - Inspect chunk content
 - Track embedding models used
 
-### 5. **Production Ready**
-- Proper error handling
-- Comprehensive logging
-- Database migrations
-- Foreign key constraints
-- Indexed queries
+### 5. **Production Readiness**
+- Implemented: core error handling paths exist.
+- Implemented: structured logging and migrations exist.
+- Implemented: foreign key constraints and indexes exist.
+- Recommended: complete distributed consistency, security hardening, and production runbooks before declaring production-ready.
 
 ## 📊 Database Schema
 
@@ -200,23 +199,25 @@ stats = db.query(
 - Separate concerns (search vs metadata)
 - Easy to add new metadata fields
 
-### Failure Modes & Recovery
-- **Transaction handling**: if FAISS write succeeds and DB sync fails, mark operation for retry and reconciliation.
-- **Idempotency**: retries should use deterministic document/chunk keys to prevent duplicate metadata rows.
-- **Concurrency**: guard concurrent writes/deletes per `document_id` to avoid race conditions.
-- **Rollback procedures**: on repeated sync failure, stop writes for affected document, resync metadata, then re-enable.
+### Operational Guidance
 
-### Performance & Throughput
-- Direct synchronous HTTP callbacks in hot paths reduce throughput under load.
-- Prefer async batching and/or event-driven propagation for better concurrency.
+Failure Modes & Recovery
+- ✅ Implemented: best-effort sync and error logging around sync paths.
+- 📋 Recommended: explicit retry/reconciliation queues for FAISS-success/DB-failure divergence.
+- 📋 Recommended: idempotent write semantics for retry safety.
+- 📋 Recommended: stronger per-document concurrency guards and tested rollback runbooks.
 
-### Monitoring & Alerting
-- Track FAISS count vs DB count divergence and alert on sustained mismatch.
-- Track sync failure rate, retry exhaustion, and endpoint latency (p95/p99).
+Performance & Throughput
+- ✅ Implemented: synchronous callback-based metadata sync integrated in current flow.
+- 📋 Recommended: async batching/event-driven propagation to improve throughput under load.
 
-### Disaster Recovery
-- Keep backups of FAISS index files and `vector_metadata` snapshots.
-- Document restore order and run consistency validation after restore/migration.
+Monitoring & Alerting
+- ✅ Implemented: endpoint-level logs and vector stats endpoint.
+- 📋 Recommended: divergence/failure-rate SLO metrics and alerting (p95/p99 latency + sync failure trends).
+
+Disaster Recovery
+- 📋 Recommended: scheduled backups for FAISS index files and `vector_metadata` snapshots.
+- 📋 Recommended: documented restore ordering and post-restore consistency verification.
 
 ## 🔍 API Endpoints
 
@@ -227,11 +228,11 @@ stats = db.query(
 | GET | `/vectors/document/{id}` | Get document's chunks |
 | DELETE | `/vectors/document/{id}` | Delete document's chunks |
 
-Authorization expectations:
-- All endpoints should require authentication (for example `Authorization: Bearer <token>`).
-- `POST /vectors/sync` should be admin/service-only with elevated permission.
-- `GET /vectors/document/{id}` and `DELETE /vectors/document/{id}` should enforce ownership or admin authorization (`403` when unauthorized).
-- Include audit logging for sync/delete operations (actor, target document, timestamp).
+Pending security controls:
+- ✅ Implemented: vector endpoints require internal service authentication (`X-Internal-API-Key`) in current backend routes.
+- ✅ Implemented: sensitive write/delete routes include internal-network restriction checks.
+- 📋 Pending: explicit ownership/admin authorization semantics on internal vector document read/delete routes.
+- 📋 Pending: full audit trail fields (actor identity, target document, timestamp, outcome) with compliance-oriented retention.
 
 ## 📝 Example Usage
 
@@ -312,7 +313,7 @@ psql -U postgres -d ai_support -c "SELECT COUNT(*) FROM vector_metadata;"
 
 ## 🎉 Result
 
-**Hybrid vector storage is now fully operational!**
+**Hybrid vector storage is operational with core integration complete; production hardening items remain.**
 
 Your system now combines:
 - **FAISS** for blazing-fast similarity search

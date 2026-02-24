@@ -1,12 +1,12 @@
 import os
 import json
 import copy
+import tempfile
 from typing import List, Dict, Any, Tuple, Optional
 import requests
 import numpy as np
 import faiss
 import httpx
-import asyncio
 import threading
 from embeddings.embedder import EMBEDDING_DIM
 from utils.logger import get_logger
@@ -26,6 +26,11 @@ os.makedirs(DATA_DIR, exist_ok=True)
 _INDEX_CACHE: Optional[faiss.IndexFlatL2] = None
 _META_CACHE: Optional[List[Dict[str, Any]]] = None
 _CACHE_LOCK = threading.Lock()
+_INDEX_OP_LOCK = threading.RLock()
+
+
+def _internal_headers() -> Dict[str, str]:
+    return {"X-Internal-API-Key": settings.INTERNAL_API_KEY}
 
 # Load / Create Index
 def _empty_index() -> faiss.IndexFlatL2:
@@ -83,28 +88,45 @@ def save_index_and_metadata(index: faiss.IndexFlatL2, metadata: List[Dict[str, A
     """
     global _INDEX_CACHE, _META_CACHE
 
-    with _CACHE_LOCK:
-        faiss.write_index(index, INDEX_PATH)
-        with open(META_PATH, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
-        
-        _INDEX_CACHE = faiss.clone_index(index)
-        _META_CACHE = copy.deepcopy(metadata)
-    
-    # Sync metadata to database (best effort)
-    # Always use sync approach since this function is called from sync context
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/vectors/sync",
-            json={"metadata": metadata},
-            timeout=10.0
-        )
-        if response.status_code == 200:
-            logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
-        else:
-            logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
-    except Exception as e:
-        logger.warning(f"Failed to sync metadata to database: {e}")
+    with _INDEX_OP_LOCK:
+        with _CACHE_LOCK:
+            index_dir = os.path.dirname(INDEX_PATH) or "."
+            meta_dir = os.path.dirname(META_PATH) or "."
+
+            fd_idx, tmp_index_path = tempfile.mkstemp(prefix="faiss_index_", suffix=".tmp", dir=index_dir)
+            os.close(fd_idx)
+            try:
+                faiss.write_index(index, tmp_index_path)
+                os.replace(tmp_index_path, INDEX_PATH)
+            finally:
+                if os.path.exists(tmp_index_path):
+                    os.unlink(tmp_index_path)
+
+            fd_meta, tmp_meta_path = tempfile.mkstemp(prefix="metadata_", suffix=".tmp", dir=meta_dir)
+            try:
+                with os.fdopen(fd_meta, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_meta_path, META_PATH)
+            finally:
+                if os.path.exists(tmp_meta_path):
+                    os.unlink(tmp_meta_path)
+
+            _INDEX_CACHE = faiss.clone_index(index)
+            _META_CACHE = copy.deepcopy(metadata)
+
+            try:
+                response = requests.post(
+                    f"{BACKEND_URL}/vectors/sync",
+                    json={"metadata": metadata},
+                    headers=_internal_headers(),
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully synced {len(metadata)} vector metadata entries to database")
+                else:
+                    logger.warning(f"Failed to sync metadata: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.warning(f"Failed to sync metadata to database: {e}")
 
 
 async def _sync_metadata_to_db_async(metadata: List[Dict[str, Any]]) -> None:
@@ -117,6 +139,7 @@ async def _sync_metadata_to_db_async(metadata: List[Dict[str, Any]]) -> None:
             response = await client.post(
                 f"{BACKEND_URL}/vectors/sync",
                 json={"metadata": metadata},
+                headers=_internal_headers(),
                 timeout=10.0
             )
             if response.status_code == 200:
@@ -139,21 +162,22 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
         "embedding_shape": embeddings.shape
     })
     
-    index, metadata = load_index_and_metadata()
+    with _INDEX_OP_LOCK:
+        index, metadata = load_index_and_metadata()
 
-    if embeddings.shape[1] != EMBEDDING_DIM:
-        raise ValueError(
-            f"Embedding dimension mismatch: got {embeddings.shape[1]}, expected {EMBEDDING_DIM}"   
-        )
+        if embeddings.shape[1] != EMBEDDING_DIM:
+            raise ValueError(
+                f"Embedding dimension mismatch: got {embeddings.shape[1]}, expected {EMBEDDING_DIM}"   
+            )
 
-    if embeddings.shape[0] != len(metadatas):
-        raise ValueError(
-            f"Embeddings/metadata count mismatch: embeddings.shape[0]={embeddings.shape[0]} vs len(metadatas)={len(metadatas)}"
-        )
+        if embeddings.shape[0] != len(metadatas):
+            raise ValueError(
+                f"Embeddings/metadata count mismatch: embeddings.shape[0]={embeddings.shape[0]} vs len(metadatas)={len(metadatas)}"
+            )
     
-    index.add(embeddings)
-    metadata.extend(metadatas)
-    save_index_and_metadata(index, metadata)
+        index.add(embeddings)
+        metadata.extend(metadatas)
+        save_index_and_metadata(index, metadata)
     
     logger.info(f"FAISS index updated", extra={"total_vectors": index.ntotal})
 
@@ -161,27 +185,34 @@ def add_embeddings(embeddings: np.ndarray, metadatas: List[Dict[str, Any]]) -> N
 def delete_document(document_id: int) -> None:
     logger.info("Deleting document", extra={"document_id": document_id})
 
-    index, metadata = load_index_and_metadata()
+    with _INDEX_OP_LOCK:
+        _, metadata = load_index_and_metadata()
+        kept_metadata = [m for m in metadata if m["document_id"] != document_id]
 
-    kept_metadata = [m for m in metadata if m["document_id"] != document_id]
+        if len(kept_metadata) == len(metadata):
+            logger.info("No vectors found for document", extra={"document_id": document_id})
+            return
 
-    if len(kept_metadata) == len(metadata):
-        logger.info("No vectors found for document", extra={"document_id": document_id})
-        return
-    
-    removed = len(metadata) - len(kept_metadata)
+        removed = len(metadata) - len(kept_metadata)
 
-    # Delete DB metadata FIRST
-    response = requests.delete(
-        f"{BACKEND_URL}/vectors/document/{document_id}",
-        timeout=10.0
-    )
+        rebuild_index(kept_metadata)
 
-    if response.status_code != 200:
-        raise RuntimeError("DB vector metadata deletion failed")
-    
-    # rebuild FAISS 
-    rebuild_index(kept_metadata)
+        response = requests.delete(
+            f"{BACKEND_URL}/vectors/document/{document_id}",
+            headers=_internal_headers(),
+            timeout=10.0,
+        )
+                headers=_internal_headers(),
+
+        if response.status_code != 200:
+            compensation = requests.post(
+                f"{BACKEND_URL}/vectors/sync",
+                json={"metadata": kept_metadata},
+                headers=_internal_headers(),
+                timeout=10.0,
+            )
+            if compensation.status_code != 200:
+                raise RuntimeError("DB vector metadata deletion failed and compensation sync failed")
 
     # Verify
     index, meta = load_index_and_metadata()
@@ -192,76 +223,6 @@ def delete_document(document_id: int) -> None:
         "document_id": document_id,
         "vectors_removed": removed
     })
-# def delete_document(document_id: int) -> None:
-#     """
-#     Delete all FAISS vectors belonging to a document.
-#     Rebuilds FAISS index by re-embedding remaining documents.
-#     Also removes metadata from database.
-#     """
-#     logger.info(f"Deleting document from FAISS", extra={"document_id": document_id})
-    
-#     from embeddings.embedder import embed_texts
-    
-#     index, metadata = load_index_and_metadata()
-
-#     # Filter out metadata for this document
-#     new_metadata = [m for m in metadata if m["document_id"] != document_id]
-    
-#     # Delete from database (async in background)
-#     try:
-#         # Try to get the running event loop and schedule the async deletion
-#         loop = asyncio.get_running_loop()
-#         task = loop.create_task(_delete_metadata_from_db_async(document_id))
-#         # Add a callback to handle any exceptions
-#         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-#     except RuntimeError:
-#         # No event loop running, use sync fallback
-#         try:
-#             import requests
-#             response = requests.delete(
-#                 f"{BACKEND_URL}/vectors/document/{document_id}",
-#                 timeout=10.0
-#             )
-#             if response.status_code == 200:
-#                 logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
-#             else:
-#                 logger.warning(f"Failed to delete metadata: {response.status_code}")
-#         except Exception as e:
-#             logger.warning(f"Failed to delete metadata from database: {e}")
-#     except Exception as e:
-#         logger.warning(f"Failed to delete metadata from database: {e}")
-
-#     # If nothing changed, do nothing
-#     if len(new_metadata) == len(metadata):
-#         logger.info(f"No chunks found for document, nothing to delete", extra={"document_id": document_id})
-#         return
-    
-#     chunks_removed = len(metadata) - len(new_metadata)
-#     logger.info(f"Removed chunks, rebuilding index", extra={
-#         "document_id": document_id,
-#         "chunks_removed": chunks_removed,
-#         "remaining_chunks": len(new_metadata)
-#     })
-    
-#     # Rebuild FAISS from scratch by re-embedding
-#     rebuild_index(new_metadata)
-
-# async def _delete_metadata_from_db_async(document_id: int) -> None:
-#     """
-#     Delete vector metadata from backend database for a specific document.
-#     """
-#     try:
-#         async with httpx.AsyncClient() as client:
-#             response = await client.delete(
-#                 f"{BACKEND_URL}/vectors/document/{document_id}",
-#                 timeout=10.0
-#             )
-#             if response.status_code == 200:
-#                 logger.info(f"Successfully deleted vector metadata for document {document_id} from database")
-#             else:
-#                 logger.warning(f"Failed to delete metadata: {response.status_code}")
-#     except Exception as e:
-#         logger.error(f"Error deleting metadata from database: {e}", exc_info=True)
 
 
 # Rebuild FAISS Index (used after deletion and updates)

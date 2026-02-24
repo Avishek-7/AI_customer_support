@@ -46,7 +46,7 @@ export default function ResizableSidebar({
   function onMouseUp() {
     dragging.current = false;
     document.body.style.userSelect = "";
-    document.body.style.cursor = "auto";
+    document.body.style.cursor = "";
   }
 
   // attach global listeners
@@ -75,6 +75,9 @@ export default function ResizableSidebar({
     return () => {
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      dragging.current = false;
     };
   }, [maxWidth, minWidth, side]);
 

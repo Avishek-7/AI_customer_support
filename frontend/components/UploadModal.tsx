@@ -27,7 +27,11 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
 
   const handleUpload = async () => {
     const token = getToken();
-    if (!file || !title.trim() || !token) return;
+    if (!token) {
+      setError("Authentication required — please sign in");
+      return;
+    }
+    if (!file || !title.trim()) return;
 
     if (!API_BASE) {
       setError("API base URL is not configured");
@@ -125,7 +129,15 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
+      const isPdf =
+        selectedFile.type === "application/pdf" ||
+        selectedFile.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        setError("Only PDF files are allowed");
+        return;
+      }
       setFile(selectedFile);
+      setError(null);
       if (!title) {
         setTitle(selectedFile.name.replace(/\.pdf$/i, ""));
       }

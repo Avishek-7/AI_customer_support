@@ -77,9 +77,9 @@ async def index_document(
     
     try:
         # Step 2: Embed chunks
+        await update_status(document_id, "embedding")
         embeddings = embed_texts(chunks)
         logger.info(f"Chunks embedded", extra={"document_id": document_id, "embedding_shape": embeddings.shape})
-        await update_status(document_id, "embedding")
 
         # Step 3: Build metadata for each chunk
         metadatas: List[Dict[str, Any]] = []
@@ -259,7 +259,7 @@ def answer_query(
     # Save conversation to memory
     save_turn(session_id, user_message=query, ai_message=answer)
 
-    # Extract metdata for frontend UI
+    # Extract metadata for frontend UI
     sources = [doc.metadata for doc in docs]
     
     logger.info("RAG query completed", extra={
@@ -299,7 +299,7 @@ def answer_query(
 
 async def answer_query_stream(req):
     query = req.query
-    k = req.k or 10  # Retrieve more chunks to ensure complete answers
+    k = req.k if req.k is not None else 10  # Retrieve more chunks to ensure complete answers
     document_ids = req.document_ids
 
     logger.info("Processing streaming query", extra={
@@ -388,6 +388,7 @@ async def answer_query_stream(req):
         if not token:
             continue
         full_answer_tokens.append(token)
+        yield {"type": "token", "content": token}
 
     llm_duration = time.perf_counter() - llm_start
     LLM_LATENCY.labels("stream").observe(llm_duration)
@@ -400,11 +401,8 @@ async def answer_query_stream(req):
         "total_ms": round(total_duration * 1000, 2)
     })
     
-    # Postprocess and stream final answer (postprocessed text only)
+    # Postprocess final answer for persistence/analytics (stream already emitted incrementally)
     full_answer = postprocess_answer("".join(full_answer_tokens))
-
-    for token in full_answer.split():
-        yield {"type": "token", "content": token + " "}
     
     logger.info("=== PIPELINE STREAMED ANSWER ===", extra={
         "session_id": req.session_id,
@@ -456,11 +454,19 @@ def _prepare_context_list(chunks: List[str], max_chars: int = 10000) -> List[str
         if not chunk or len(chunk) < 20:
             continue
 
-        cleaned_chunks.append(chunk)
-        total_chars += len(chunk)
-        
-        if total_chars > max_chars:
+        prospective_size = total_chars + len(chunk)
+        if prospective_size > max_chars:
+            remaining = max_chars - total_chars
+            if remaining <= 0:
+                break
+            truncated = chunk[:remaining].strip()
+            if truncated:
+                cleaned_chunks.append(truncated)
+                total_chars += len(truncated)
             break
+
+        cleaned_chunks.append(chunk)
+        total_chars = prospective_size
     
     return cleaned_chunks
 

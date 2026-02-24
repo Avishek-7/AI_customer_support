@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime
 import httpx
 from core.database import get_db
 from core.roles import require_admin
@@ -49,8 +49,6 @@ class SystemStats(BaseModel):
     total_documents: int
     total_chats: int
     total_api_calls: int
-    users_last_24h: int
-    documents_last_24h: int
 
 
 # Get All Users
@@ -163,18 +161,12 @@ async def get_system_statistics(
     total_api_calls_result = await db.execute(select(func.count(APIUsage.id)))
     total_api_calls = total_api_calls_result.scalar()
     
-    # Last 24 hours
-    yesterday = datetime.utcnow() - timedelta(days=1)
-    users_last_24h = 0  # Requires created_at column
-    documents_last_24h = 0  # Requires created_at column
-    
+
     return SystemStats(
         total_users=total_users,
         total_documents=total_documents,
         total_chats=total_chats,
-        total_api_calls=total_api_calls,
-        users_last_24h=0,  # Requires created_at column
-        documents_last_24h=0  # Requires created_at column
+        total_api_calls=total_api_calls
     )
 
 
@@ -220,30 +212,28 @@ async def get_user_usage(
 # Get All Documents (Admin View)
 @router.get("/documents")
 async def get_all_documents(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin)
 ):
     """Admin-only: View all documents across all users"""
     logger.info(f"Admin viewing all documents", extra={"admin_id": admin_user.id})
     
-    offset = (page - 1) * per_page
-
     total_result = await db.execute(select(func.count()).select_from(Document))
     total = total_result.scalar() or 0
 
     result = await db.execute(
         select(Document)
         .order_by(Document.id.desc())
-        .limit(per_page)
+        .limit(limit)
         .offset(offset)
     )
     docs = result.scalars().all()
     
     return {
-        "page": page,
-        "per_page": per_page,
+        "limit": limit,
+        "offset": offset,
         "total": total,
         "returned_count": len(docs),
         "documents": [
@@ -270,7 +260,7 @@ async def get_all_chats(
     
     result = await db.execute(
         select(ChatHistory)
-        .order_by(ChatHistory.timestamp.desc())
+        .order_by(ChatHistory.created_at.desc())
         .limit(100)
     )
     chats = result.scalars().all()
@@ -285,8 +275,8 @@ async def get_all_chats(
             {
                 "id": chat.id,
                 "user_id": chat.user_id,
-                "message": chat.message[:100] + "..." if len(chat.message) > 100 else chat.message,
-                "timestamp": chat.timestamp
+                "message": chat.content[:100] + "..." if len(chat.content) > 100 else chat.content,
+                "timestamp": chat.created_at
             }
             for chat in chats
         ]
@@ -379,6 +369,20 @@ async def debug_conversation(
     if last_user_msg:
         # Call AI engine debug endpoint to get retrieval details
         try:
+            def _safe_json(response: httpx.Response, context: str) -> dict:
+                if response.status_code != 200:
+                    return {}
+                try:
+                    return response.json()
+                except ValueError as parse_error:
+                    logger.error("Failed to parse AI engine JSON", extra={
+                        "context": context,
+                        "status_code": response.status_code,
+                        "response_preview": response.text[:300],
+                        "error": str(parse_error),
+                    })
+                    return {}
+
             async with httpx.AsyncClient() as client:
                 # Get retrieved chunks
                 search_response = await client.get(
@@ -386,7 +390,7 @@ async def debug_conversation(
                     params={"query": last_user_msg.content, "k": 5},
                     timeout=30.0
                 )
-                search_data = search_response.json() if search_response.status_code == 200 else {}
+                search_data = _safe_json(search_response, "debug/search-preview")
                 
                 # Get confidence and hallucination scores
                 if last_assistant_msg and search_data.get("chunks"):
@@ -399,7 +403,7 @@ async def debug_conversation(
                         },
                         timeout=30.0
                     )
-                    critique_data = critique_response.json() if critique_response.status_code == 200 else {}
+                    critique_data = _safe_json(critique_response, "critique")
                 else:
                     critique_data = {}
                 
@@ -425,8 +429,8 @@ async def debug_conversation(
                     "critique_details": critique_data.get("critique", {})
                 }
         except Exception as e:
-            logger.error(f"Failed to get debug info from AI engine", extra={"error": str(e)})
-            debug_info = {"error": str(e)}
+            logger.error("Failed to get debug info from AI engine", extra={"error": str(e)}, exc_info=True)
+            debug_info = {"error": "failed to fetch debug info", "error_code": "AI_DEBUG_FETCH_FAILED"}
     
     return {
         "conversation_id": conversation_id,

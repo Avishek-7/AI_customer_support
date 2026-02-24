@@ -1,10 +1,14 @@
 import os
 import uuid
 from fastapi import UploadFile, HTTPException
+from utils.logger import get_logger
+
+logger = get_logger("backend.utils.file_utils")
 
 # Directory where we store temporary uploaded files
 UPLOAD_DIR = "./temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+CHUNK_SIZE = 64 * 1024
 
 def generate_unique_filename(filename: str) -> str:
     _, extension = os.path.splitext(filename or "")
@@ -35,14 +39,26 @@ def save_upload_file(upload_file: UploadFile) -> str:
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
     with open(file_path, "wb") as buffer:
-        buffer.write(upload_file.file.read())
+        while True:
+            chunk = upload_file.file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            buffer.write(chunk)
 
     upload_file.file.seek(0)  # Reset file pointer after saving
     return file_path
 
 def delete_file(path: str) -> None:
+    upload_root = os.path.abspath(UPLOAD_DIR)
+    resolved_path = os.path.abspath(path)
+    if os.path.commonpath([upload_root, resolved_path]) != upload_root:
+        raise ValueError("Attempted to delete file outside upload directory")
+
     try:
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception as e:
-        pass  # Log error in real application
+        os.remove(resolved_path)
+    except FileNotFoundError:
+        logger.warning("File not found during delete", extra={"path": resolved_path})
+        raise
+    except PermissionError:
+        logger.error("Permission denied deleting file", extra={"path": resolved_path})
+        raise

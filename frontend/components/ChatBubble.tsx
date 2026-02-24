@@ -39,10 +39,13 @@ export default function ChatBubble({
               <ReactMarkdown
                 rehypePlugins={[rehypeHighlight]}
                 components={{
-                  code({ inline, className, children, ...props }) {
+                  code({ className, children, node, ...props }) {
                     const match = /language-(\w+)/.exec(className || "");
                     const lang = match ? match[1] : "";
-                    const isInline = inline === true;
+                    const inlineProp = (props as { inline?: boolean }).inline;
+                    const parentTag = (node as { parent?: { tagName?: string } } | undefined)?.parent?.tagName;
+                    const inferredBlock = parentTag === "pre";
+                    const isInline = inferredBlock ? false : inlineProp === true;
                     if (!isInline) {
                       return (
                         <SyntaxHighlighter

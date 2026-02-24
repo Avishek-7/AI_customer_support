@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 import time
 import hashlib
@@ -87,7 +88,7 @@ async def create_user(body: UserCreateAdmin, db: AsyncSession = Depends(get_db))
     try:
         new_user = User(
             email=body.email,
-            name=body.name,
+            name=body.full_name,
             password_hash=hash_password(body.password),
             role=body.role,
         )
@@ -98,6 +99,10 @@ async def create_user(body: UserCreateAdmin, db: AsyncSession = Depends(get_db))
         latency = time.time() - start_time
         logger.info("User created by admin", extra={"user_id": new_user.id, "latency": f"{latency:.3f}s"})
         return new_user
+    except IntegrityError:
+        await db.rollback()
+        logger.warning("User creation failed due to unique constraint", extra={"user_email_hash": user_email_hash})
+        raise ErrorHandler.conflict("Email already registered")
     except Exception as e:
         await db.rollback()
         logger.error("Failed to create user", extra={"user_email_hash": user_email_hash, "error": str(e)})
@@ -143,6 +148,9 @@ async def update_user(user_id: int, body: UserUpdate, db: AsyncSession = Depends
         latency = time.time() - start_time
         logger.info("User updated", extra={"user_id": user.id, "by_user": current_user.id, "latency": f"{latency:.3f}s"})
         return user
+    except IntegrityError:
+        await db.rollback()
+        raise ErrorHandler.conflict("Email already in use")
     except Exception as e:
         await db.rollback()
         logger.error("Failed to update user", extra={"user_id": user_id, "error": str(e)})

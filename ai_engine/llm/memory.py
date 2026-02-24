@@ -1,6 +1,9 @@
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from typing import List
+from collections import OrderedDict
+import os
+import time
 
 
 class InMemoryChatHistory(BaseChatMessageHistory):
@@ -27,14 +30,47 @@ class InMemoryChatHistory(BaseChatMessageHistory):
 
 
 # You can replace this with Redis later for scaling
-memory_store = {}
+MAX_MEMORY_SESSIONS = int(os.getenv("MEMORY_MAX_SESSIONS", "1000"))
+MEMORY_SESSION_TTL_SECONDS = int(os.getenv("MEMORY_SESSION_TTL_SECONDS", "86400"))
+memory_store: "OrderedDict[str, tuple[InMemoryChatHistory, float]]" = OrderedDict()
+
+
+def _evict_oldest_if_needed() -> None:
+    now = time.time()
+
+    expired = [
+        session_id
+        for session_id, (_, updated_at) in memory_store.items()
+        if now - updated_at > MEMORY_SESSION_TTL_SECONDS
+    ]
+    for session_id in expired:
+        memory_store.pop(session_id, None)
+
+    while len(memory_store) > MAX_MEMORY_SESSIONS:
+        memory_store.popitem(last=False)
 
 def get_memory(session_id: str) -> InMemoryChatHistory:
     """Returns a chat history object for the given user/session.
     
     Creates one if it doesn't exist.
     """
-    return memory_store.setdefault(session_id, InMemoryChatHistory())
+    now = time.time()
+    existing = memory_store.get(session_id)
+    if existing is not None:
+        history, _ = existing
+        memory_store[session_id] = (history, now)
+        memory_store.move_to_end(session_id)
+        return history
+
+    history = InMemoryChatHistory()
+    memory_store[session_id] = (history, now)
+    memory_store.move_to_end(session_id)
+    _evict_oldest_if_needed()
+    return history
+
+
+def clear_session(session_id: str) -> None:
+    memory_store.pop(session_id, None)
 
 
 def save_turn(session_id: str, user_message: str | None = None, ai_message: str | None = None) -> None:

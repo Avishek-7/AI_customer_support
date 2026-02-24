@@ -8,16 +8,22 @@ def postprocess_answer(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
 
-    # Remove repeated sentences (simple heuristic)
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    seen = set()
-    cleaned = []
-    for s in sentences:
-        key = s.strip().lower()
-        if key and key not in seen:
-            seen.add(key)
-            cleaned.append(s.strip())
+    paragraphs = text.split("\n\n")
+    cleaned_paragraphs = []
 
-    text = " ".join(cleaned)
+    for paragraph in paragraphs:
+        sentences = re.split(r'(?<=[.!?])\s+', paragraph.strip())
+        seen = set()
+        cleaned = []
+        for sentence in sentences:
+            key = sentence.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                cleaned.append(sentence.strip())
+
+        if cleaned:
+            cleaned_paragraphs.append(" ".join(cleaned))
+
+    text = "\n\n".join(cleaned_paragraphs)
 
     return text.strip()

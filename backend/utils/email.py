@@ -37,7 +37,8 @@ If you didn't request this, please ignore this email.
     )
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT or 10) as smtp:
+        smtp_timeout = settings.SMTP_TIMEOUT if settings.SMTP_TIMEOUT is not None else 10
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=smtp_timeout) as smtp:
             if settings.SMTP_USE_TLS:
                 smtp.starttls()
             if settings.SMTP_USER and settings.SMTP_PASS:

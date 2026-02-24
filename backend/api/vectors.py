@@ -1,4 +1,5 @@
 import ipaddress
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,11 +30,14 @@ def _get_client_ip(request: Request) -> str:
 
 
 def _is_internal_ip(value: str) -> bool:
+    normalized = (value or "").strip().lower()
+    if normalized == "localhost":
+        return True
     try:
-        ip = ipaddress.ip_address(value)
+        ip = ipaddress.ip_address(normalized)
         return ip.is_private or ip.is_loopback or ip.is_link_local
     except ValueError:
-        return value in {"localhost", "unknown"}
+        return False
 
 
 def require_service_auth(
@@ -45,7 +49,7 @@ def require_service_auth(
         logger.warning("Missing internal API key for vector endpoint", extra={"client_ip": client_ip})
         raise HTTPException(status_code=401, detail="Missing internal API key")
 
-    if internal_api_key != settings.INTERNAL_API_KEY:
+    if not secrets.compare_digest(internal_api_key or "", settings.INTERNAL_API_KEY or ""):
         logger.warning("Invalid internal API key for vector endpoint", extra={"client_ip": client_ip})
         raise HTTPException(status_code=401, detail="Invalid internal API key")
 
@@ -90,7 +94,8 @@ async def sync_vector_metadata(
         
         # Insert new metadata
         synced_count = 0
-        for idx, meta in enumerate(body.metadata):
+        faiss_pos = 0
+        for meta in body.metadata:
             document_id = meta.get("document_id")
             
             # Verify document exists
@@ -102,11 +107,12 @@ async def sync_vector_metadata(
                 document_id=document_id,
                 chunk_index=meta.get("chunk_id", 0),
                 text=meta.get("text", ""),
-                faiss_index=idx,  # Position in FAISS index
+                faiss_index=faiss_pos,
                 chunk_length=len(meta.get("text", ""))
             )
             db.add(vector_meta)
             synced_count += 1
+            faiss_pos += 1
         
         await db.commit()
         

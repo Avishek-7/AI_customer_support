@@ -1,9 +1,10 @@
-from fastapi import FastAPI, BackgroundTasks, Request, Response
+from fastapi import FastAPI, BackgroundTasks, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
 import uuid
+import hashlib
 
 from rag.pipeline import index_document, answer_query, update_document, answer_query_stream
 from vectorstore.vector_store import delete_document
@@ -13,11 +14,13 @@ from utils.hallucination import detect_hallucination
 from embeddings.embedder import embed_text, get_embedding_model
 from vectorstore.vector_store import search_embeddings, load_index_and_metadata
 from utils.metrics import REQUEST_LATENCY, render_metrics
+from utils.config import get_settings
 import time
 
 # Initialize logging on startup
 init_logging()
 logger = get_logger("ai_engine.app")
+settings = get_settings()
 
 app = FastAPI(
     title="AI Engine - RAG Microservice",
@@ -138,6 +141,15 @@ class RegenerateResponse(BaseModel):
     regeneration_info: Dict[str, Any]
 
 
+def _hash_identifier(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+def _ensure_debug_enabled() -> None:
+    if not settings.ENABLE_DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 # Routes
 
 @app.get("/")
@@ -218,9 +230,11 @@ def query_endpoint(body: QueryRequest):
     set_request_id(req_id)
 
     try:
+        session_hash = _hash_identifier(body.session_id)
         logger.info("Processing query", extra={
-            "query": body.query[:100],
-            "session_id": body.session_id,
+            "query_preview": body.query[:80],
+            "query_length": len(body.query),
+            "session_id_hash": session_hash,
             "document_ids": body.document_ids,
             "k": body.k
         })
@@ -235,12 +249,15 @@ def query_endpoint(body: QueryRequest):
 
         logger.info("=== AI ENGINE ANSWER ===", extra={
             "request_id": req_id,
-            "query": body.query,
-            "answer": result["answer"],
+            "session_id_hash": session_hash,
             "answer_length": len(result["answer"]),
             "sources_count": len(result["sources"])
         })
-        logger.info(f"[AI_ENGINE_ANSWER] {result['answer'][:500]}..." if len(result["answer"]) > 500 else f"[AI_ENGINE_ANSWER] {result['answer']}")
+        logger.debug("AI answer preview", extra={
+            "request_id": req_id,
+            "answer_preview": result["answer"][:120],
+            "answer_hash": _hash_identifier(result["answer"]),
+        })
 
         return QueryResponse(
             answer=result["answer"],
@@ -257,17 +274,21 @@ def update_document_endpoint(body: IndexDocumentRequest):
     - delete old embeddings
     - re-chunk, re-embed, re-index
     """
+    req_id = str(uuid.uuid4())[:8]
+    set_request_id(req_id)
+    try:
+        chunks_indexed = update_document(
+            document_id=body.document_id,
+            title=body.title,
+            content=body.content
+        )
 
-    chunks_indexed = update_document(
-        document_id=body.document_id,
-        title=body.title,
-        content=body.content
-    )
-
-    return IndexDocumentResponse(
-        document_id=body.document_id,
-        chunks_indexed=chunks_indexed
-    )
+        return IndexDocumentResponse(
+            document_id=body.document_id,
+            chunks_indexed=chunks_indexed
+        )
+    finally:
+        clear_request_id()
 
 # Delete Document
 @app.delete("/delete-document/{document_id}", response_model=DeleteDocumentResponse)
@@ -296,6 +317,8 @@ def debug_document_chunks(document_id: int):
     Debug endpoint: show all chunks stored in FAISS for a given document_id.
     Use this to verify what content was actually indexed.
     """
+    _ensure_debug_enabled()
+
     from vectorstore.vector_store import load_index_and_metadata
     
     index, metadata = load_index_and_metadata()
@@ -323,6 +346,8 @@ def debug_all_documents():
     """
     Debug endpoint: list all document_ids in FAISS and their chunk counts.
     """
+    _ensure_debug_enabled()
+
     from vectorstore.vector_store import load_index_and_metadata
     
     index, metadata = load_index_and_metadata()
@@ -350,6 +375,8 @@ def debug_search_preview(query: str, document_id: int = None, k: int = 5):
     Debug endpoint: show what chunks would be retrieved for a query.
     Helps diagnose retrieval issues.
     """
+    _ensure_debug_enabled()
+
     from embeddings.embedder import embed_text
     from vectorstore.vector_store import search_embeddings
     

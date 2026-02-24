@@ -59,9 +59,10 @@ export default function AdminDebugPage() {
 
         {/* Search Form */}
         <form onSubmit={handleSearch} className="bg-gray-800 p-6 rounded-lg mb-8">
-          <label className="block text-sm font-semibold mb-2">Conversation ID</label>
+          <label htmlFor="conversation-id" className="block text-sm font-semibold mb-2">Conversation ID</label>
           <div className="flex gap-2">
             <input
+              id="conversation-id"
               type="number"
               value={conversationId}
               onChange={(e) => setConversationId(e.target.value)}

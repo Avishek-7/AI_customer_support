@@ -1,8 +1,10 @@
 import asyncio
 import hashlib
 import time
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
@@ -30,6 +32,25 @@ def _client_ip(http_request: Request) -> str:
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
     return http_request.client.host if http_request.client else "unknown"
+
+
+def _create_password_reset_token(user_id: int, expires_minutes: int = 30) -> str:
+    payload = {
+        "sub": str(user_id),
+        "type": "password_reset",
+        "exp": datetime.utcnow() + timedelta(minutes=expires_minutes),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def _decode_password_reset_token(token: str) -> str | None:
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("type") != "password_reset":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
 
 # ------ Register User -----
 @router.post("/register", response_model=TokenResponse)
@@ -140,7 +161,7 @@ async def reset_password(request: ResetPasswordRequest, http_request: Request, d
         raise
 
     logger.info("Password reset attempt")
-    user_id = decode_access_token(request.token)
+    user_id = _decode_password_reset_token(request.token)
     if not user_id:
         logger.warning("Password reset failed - invalid token")
         raise ErrorHandler.bad_request("Invalid or expired token")
@@ -160,11 +181,15 @@ async def reset_password(request: ResetPasswordRequest, http_request: Request, d
     if not user.reset_token or user.reset_token != request.token or user.reset_token_used:
         logger.warning("Password reset failed - token already used or mismatched", extra={"user_id": user.id})
         raise ErrorHandler.bad_request("Invalid or expired token")
+    if not user.reset_token_expires_at or user.reset_token_expires_at <= datetime.utcnow():
+        logger.warning("Password reset failed - token expired", extra={"user_id": user.id})
+        raise ErrorHandler.bad_request("Invalid or expired token")
 
     try:
         user.password_hash = hash_password(request.new_password)
         user.reset_token_used = True
         user.reset_token = None
+        user.reset_token_expires_at = None
         await db.commit()
         access_token = create_access_token(data={"sub": str(user.id)})
         latency = time.time() - start_time
@@ -191,10 +216,11 @@ async def forgot_password(forgot_password_request: ForgotPasswordRequest, http_r
         # Don't reveal if email exists (security best practice)
         return {"message": "If the email exists, a reset link has been sent"}
     
-    reset_token = create_access_token(data={"sub": str(user.id)})
+    reset_token = _create_password_reset_token(user.id)
 
     try:
         user.reset_token = reset_token
+        user.reset_token_expires_at = datetime.utcnow() + timedelta(minutes=30)
         user.reset_token_used = False
         await db.commit()
     except Exception as e:
@@ -214,8 +240,22 @@ async def forgot_password(forgot_password_request: ForgotPasswordRequest, http_r
     return {"message": "If the email exists, a reset link has been sent"}
     
 @router.get("/reset-password/{token}")
-async def verify_reset_token(token: str, db: AsyncSession = Depends(get_db)):
-    user_id = decode_access_token(token)
+async def verify_reset_token(token: str, http_request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = _client_ip(http_request)
+    token_hash_prefix = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+
+    try:
+        rate_limit_key(key=f"reset_password:{client_ip}:{token_hash_prefix}", limit=10, window=3600)
+    except HTTPException as exc:
+        if exc.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=exc.detail,
+                headers={"Retry-After": "3600"},
+            )
+        raise
+
+    user_id = _decode_password_reset_token(token)
     if not user_id:
         raise ErrorHandler.bad_request("Invalid or expired token")
 
@@ -230,6 +270,8 @@ async def verify_reset_token(token: str, db: AsyncSession = Depends(get_db)):
         raise ErrorHandler.not_found("User not found")
 
     if not user.reset_token or user.reset_token != token or user.reset_token_used:
+        raise ErrorHandler.bad_request("Invalid or expired token")
+    if not user.reset_token_expires_at or user.reset_token_expires_at <= datetime.utcnow():
         raise ErrorHandler.bad_request("Invalid or expired token")
 
     logger.info("Reset token verified", extra={"user_id": user_id})

@@ -293,6 +293,24 @@ pytest tests/test_vectors_api.py
 - Surface sync failures in logs/metrics and retry with bounded backoff where appropriate.
 - Track divergence indicators (FAISS count vs DB metadata count) and alert on sustained mismatch.
 
+### Monitoring & Metrics
+- Expose these metrics on application `/metrics` (Prometheus format):
+    - `vector_storage.faiss.count` gauge (Prometheus name: `vector_storage_faiss_count`)
+    - `vector_storage.db.count` gauge (Prometheus name: `vector_storage_db_count`)
+    - `vector_storage.sync.failures` counter (Prometheus name: `vector_storage_sync_failures`)
+    - `vector_storage.divergence` gauge = `abs(faiss_count - db_count)`
+- Emit/update all four metrics during sync, delete, and periodic reconciliation jobs so dashboards reflect both write-path and background consistency checks.
+- Log every sync failure with structured fields (`document_id`, operation type, status/error, retry attempt, request/correlation id) so metric spikes can be traced to concrete failures.
+
+Alerting examples:
+- **Warning**: divergence > 100 vectors or >5% for 15m.
+- **Critical**: divergence > 1000 vectors or >10% for 30m.
+- **Warning**: sync failure rate >5% over 15m.
+
+Recommended integrations:
+- Prometheus + Alertmanager (primary reference stack).
+- CloudWatch/Datadog equivalent monitors for teams not running Prometheus directly.
+
 ### Sync Failure Runbook
 1. Detect mismatch via `/vectors/stats` and operational metrics.
 2. Triage recent indexing/deletion logs for failed sync attempts.

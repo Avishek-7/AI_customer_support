@@ -29,8 +29,9 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
     source_texts = [s.get("text", "") for s in sources if s.get("text")]
     if not source_texts:
         return {
-            "hallucination_score": 0.9,  # High hallucination risk if no sources
-            "alignment_score": 0.1,
+            "hallucination_score": None,
+            "alignment_score": None,
+            "computable": False,
             "details": {
                 "reason": "No source texts available",
                 "risk_level": "high"
@@ -45,6 +46,8 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
     similarities = cosine_similarity([answer_emb], source_embs)[0]
     max_similarity = float(np.max(similarities))
     avg_similarity = float(np.mean(similarities))
+    max_similarity = min(max(max_similarity, 0.0), 1.0)
+    avg_similarity = min(max(avg_similarity, 0.0), 1.0)
     
     # 2. Keyword overlap scoring
     answer_words = set(re.findall(r'\w+', answer.lower()))
@@ -61,13 +64,16 @@ def detect_hallucination(answer: str, sources: List[dict]) -> dict:
         keyword_overlap = len(answer_words & source_words) / len(answer_words)
     else:
         keyword_overlap = 0.0
+    keyword_overlap = min(max(keyword_overlap, 0.0), 1.0)
     
     # 3. Combined alignment score (weighted average)
     # Higher weight on embedding similarity as it captures semantic meaning
     alignment_score = (0.6 * max_similarity + 0.3 * avg_similarity + 0.1 * keyword_overlap)
+    alignment_score = min(max(alignment_score, 0.0), 1.0)
     
     # Hallucination score is inverse of alignment (low alignment = high hallucination risk)
     hallucination_score = 1.0 - alignment_score
+    hallucination_score = min(max(hallucination_score, 0.0), 1.0)
     
     return {
         "hallucination_score": round(hallucination_score, 3),

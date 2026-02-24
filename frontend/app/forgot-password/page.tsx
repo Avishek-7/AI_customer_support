@@ -44,7 +44,11 @@ export default function ForgotPasswordPage() {
         authLogger.warn("Forgot password request failed", { error: response.detail });
       } else {
         setMessage({ type: "error", text: "Unexpected response from server" });
-        authLogger.warn("Forgot password request returned unexpected response shape", { response: response as unknown as Record<string, unknown> });
+        authLogger.warn("Forgot password request returned unexpected response shape", {
+          hasMessage: Boolean(response?.message),
+          hasDetail: Boolean(response?.detail),
+          detail: response?.detail,
+        });
       }
     } catch (err) {
       setMessage({ type: "error", text: "An error occurred. Please try again." });
@@ -77,9 +81,12 @@ export default function ForgotPasswordPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <label htmlFor="forgot-email" className="sr-only">Email</label>
           <input
+            id="forgot-email"
             type="email"
             placeholder="Email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full px-4 py-2 rounded bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600"

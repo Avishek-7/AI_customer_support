@@ -133,9 +133,9 @@ curl http://localhost:8000/vectors/stats  # PostgreSQL
 # Restart both services
 For production, use a process manager (`systemd`, `supervisor`, or `pm2`) instead of manual PID handling.
 
-# Start with PID files
-uvicorn backend.main:app --reload --port 8000 & echo $! > /tmp/backend_uvicorn.pid
-uvicorn ai_engine.app:app --reload --port 9000 & echo $! > /tmp/ai_engine_uvicorn.pid
+# Start with PID files (run from each service directory)
+cd backend && uvicorn main:app --reload --port 8000 & echo $! > /tmp/backend_uvicorn.pid
+cd ai_engine && uvicorn app:app --reload --port 9000 & echo $! > /tmp/ai_engine_uvicorn.pid
 
 # Restart safely using PID files
 kill "$(cat /tmp/backend_uvicorn.pid)" "$(cat /tmp/ai_engine_uvicorn.pid)"
@@ -143,6 +143,12 @@ kill "$(cat /tmp/backend_uvicorn.pid)" "$(cat /tmp/ai_engine_uvicorn.pid)"
 # Alternative (port-targeted)
 lsof -ti:8000 | xargs kill
 lsof -ti:9000 | xargs kill
+
+# Optional helper script (requires executable permission and Python/pip available):
+# ./setup_async.sh installs async dependencies used by backend + ai_engine.
+# Equivalent manual steps:
+#   cd backend && pip install asyncpg httpx
+#   cd ai_engine && pip install httpx
 ./setup_async.sh
 ```
 

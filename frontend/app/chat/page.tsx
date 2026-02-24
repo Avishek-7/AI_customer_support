@@ -94,6 +94,14 @@ export default function ChatPage() {
         return;
       }
 
+      if (!res.ok) {
+        chatLogger.error("Failed to fetch documents", {
+          status: res.status,
+          statusText: res.statusText,
+        });
+        return;
+      }
+
       const data = await res.json();
       setDocs(data.documents ?? []);
       chatLogger.info("Documents loaded", { count: data.documents?.length || 0 });

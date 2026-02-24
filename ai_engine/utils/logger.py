@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 import contextvars
 import logging.handlers
+import threading
 
 """
 Centralized logger for the AI Engine.
@@ -22,6 +23,7 @@ Features:
 # Public context var for request/correlation id
 request_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
 _logger_initialized = False
+_logger_init_lock = threading.Lock()
 
 
 def set_request_id(rid: Optional[str]) -> None:
@@ -84,7 +86,10 @@ class ConsoleFormatter(logging.Formatter):
 
 def _default_log_dir() -> Path:
     """Default log directory: ai_engine/logs"""
-    return Path(os.getenv("LOG_DIR", Path(__file__).resolve().parents[1] / "logs"))
+    value = os.getenv("LOG_DIR")
+    if value:
+        return Path(value)
+    return Path(__file__).resolve().parents[1] / "logs"
 
 
 def init_logging(
@@ -106,47 +111,46 @@ def init_logging(
         backup_count: number of backup files to keep
     """
     global _logger_initialized
-    if _logger_initialized:
-        return
+    with _logger_init_lock:
+        if _logger_initialized:
+            return
 
-    root = logging.getLogger()
+        root = logging.getLogger()
 
-    env_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    chosen_level = level if level is not None else getattr(logging, env_level, logging.INFO)
-    root.setLevel(chosen_level)
+        env_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        chosen_level = level if level is not None else getattr(logging, env_level, logging.INFO)
+        root.setLevel(chosen_level)
 
-    request_filter = RequestIDFilter()
+        request_filter = RequestIDFilter()
 
-    # Console handler (human readable)
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(chosen_level)
-    ch.setFormatter(ConsoleFormatter(
-        "%(asctime)s %(levelname)-8s [%(name)s] %(message)s%(request_id_part)s",
-        "%Y-%m-%d %H:%M:%S"
-    ))
-    ch.addFilter(request_filter)
-    root.addHandler(ch)
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(chosen_level)
+        ch.setFormatter(ConsoleFormatter(
+            "%(asctime)s %(levelname)-8s [%(name)s] %(message)s%(request_id_part)s",
+            "%Y-%m-%d %H:%M:%S"
+        ))
+        ch.addFilter(request_filter)
+        root.addHandler(ch)
 
-    # File handler (JSON, with rotation)
-    log_dir = Path(log_dir) if log_dir is not None else _default_log_dir()
-    filename = filename or os.getenv("LOG_FILE", "ai_engine.log")
-    
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        fh = logging.handlers.RotatingFileHandler(
-            str(log_dir / filename),
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding="utf-8"
-        )
-        fh.setLevel(chosen_level)
-        fh.setFormatter(JsonFormatter())
-        fh.addFilter(request_filter)
-        root.addHandler(fh)
-    except Exception:
-        root.warning("Failed to initialize file handler; continuing with console only", exc_info=True)
+        log_dir = Path(log_dir) if log_dir is not None else _default_log_dir()
+        filename = filename or os.getenv("LOG_FILE", "ai_engine.log")
 
-    _logger_initialized = True
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            fh = logging.handlers.RotatingFileHandler(
+                str(log_dir / filename),
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8"
+            )
+            fh.setLevel(chosen_level)
+            fh.setFormatter(JsonFormatter())
+            fh.addFilter(request_filter)
+            root.addHandler(fh)
+        except Exception:
+            root.warning("Failed to initialize file handler; continuing with console only", exc_info=True)
+
+        _logger_initialized = True
 
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:

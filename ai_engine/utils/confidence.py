@@ -4,7 +4,7 @@ def compute_confidence(sources: list, answer: str) -> float:
     
     # Average FAISS distance -> similarity proxy
     scores = [
-        1 / (1 + (s.get("score", 1.0) if isinstance(s, dict) else 1.0))
+        1 / (1 + max((s.get("score", 0.0) if isinstance(s, dict) else 0.0), 0.0))
         for s in sources
     ]
     avg_relevance = sum(scores) / len(scores)

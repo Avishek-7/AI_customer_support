@@ -88,6 +88,9 @@ def decode_access_token(token: str) -> Optional[str]:
             algorithms=[settings.JWT_ALGORITHM],
         )
         user_id: str = payload.get("sub")
+        if not user_id:
+            logger.warning("Token decoded but missing subject", extra={"payload": payload})
+            return None
         logger.debug(f"Token decoded", extra={"user_id": user_id})
         return user_id
     except jwt.ExpiredSignatureError:
@@ -125,7 +128,13 @@ async def get_current_user(request: Request, token: str | None = Depends(oauth_s
         logger.warning(f"Authentication failed - invalid token")
         raise credential_exception
     
-    result = await db.execute(select(User).filter(User.id == int(user_id)))
+    try:
+        parsed_user_id = int(user_id)
+    except (TypeError, ValueError):
+        logger.warning("Authentication failed - malformed subject", extra={"user_id": user_id})
+        raise credential_exception
+
+    result = await db.execute(select(User).filter(User.id == parsed_user_id))
     user = result.scalar_one_or_none()
     if user is None:
         logger.warning(f"Authentication failed - user not found", extra={"user_id": user_id})

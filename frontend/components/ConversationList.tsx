@@ -27,6 +27,8 @@ export default function ConversationList({
 }: ConversationListProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
 
   const formatDate = (value: string) => {
     const date = new Date(value);
@@ -39,11 +41,15 @@ export default function ConversationList({
     setEditTitle(conv.title);
   };
 
-  const handleSaveEdit = (id: number) => {
-    if (editTitle.trim()) {
-      onRename(id, editTitle);
+  const handleSaveEdit = (id: number, originalTitle: string) => {
+    const trimmed = editTitle.trim();
+    if (!trimmed) {
+      setEditTitle(originalTitle);
       setEditingId(null);
+      return;
     }
+    onRename(id, trimmed);
+    setEditingId(null);
   };
 
   return (
@@ -71,6 +77,14 @@ export default function ConversationList({
                 className={`relative group ${
                   activeId === conv.id ? "bg-gray-700" : "bg-gray-800 hover:bg-gray-700"
                 } rounded p-3 cursor-pointer transition`}
+                onMouseEnter={() => setHoveredId(conv.id)}
+                onMouseLeave={() => setHoveredId((prev) => (prev === conv.id ? null : prev))}
+                onFocus={() => setFocusedId(conv.id)}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    setFocusedId((prev) => (prev === conv.id ? null : prev));
+                  }
+                }}
               >
                 {editingId === conv.id ? (
                   <div className="flex gap-2">
@@ -81,7 +95,7 @@ export default function ConversationList({
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          handleSaveEdit(conv.id);
+                          handleSaveEdit(conv.id, conv.title);
                         } else if (e.key === "Escape") {
                           setEditingId(null);
                         }
@@ -90,7 +104,7 @@ export default function ConversationList({
                       className="flex-1 bg-gray-600 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <button
-                      onClick={() => handleSaveEdit(conv.id)}
+                      onClick={() => handleSaveEdit(conv.id, conv.title)}
                       className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-sm font-semibold"
                     >
                       ✓
@@ -103,15 +117,31 @@ export default function ConversationList({
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between" onClick={() => onSelect(conv.id)}>
+                  <div
+                    className="flex items-center justify-between"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelect(conv.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        onSelect(conv.id);
+                      } else if (e.key === " ") {
+                        e.preventDefault();
+                        onSelect(conv.id);
+                      }
+                    }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm font-medium truncate">{conv.title}</p>
                       <p className="text-gray-400 text-xs mt-1">
                         {formatDate(conv.created_at)}
                       </p>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition">
                       <button
+                        tabIndex={hoveredId === conv.id || focusedId === conv.id ? 0 : -1}
+                        aria-hidden={!(hoveredId === conv.id || focusedId === conv.id)}
+                        aria-label={`Rename ${conv.title}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleStartEdit(conv);
@@ -122,6 +152,9 @@ export default function ConversationList({
                         ✎
                       </button>
                       <button
+                        tabIndex={hoveredId === conv.id || focusedId === conv.id ? 0 : -1}
+                        aria-hidden={!(hoveredId === conv.id || focusedId === conv.id)}
+                        aria-label={`Delete ${conv.title}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (confirm(`Delete "${conv.title}"? This cannot be undone.`)) {

@@ -28,7 +28,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 ```python
 import requests
 
-def sync_data():
+def send_data_sync():
     response = requests.post(url, json=data)
     return response.json()
 ```
@@ -37,10 +37,11 @@ def sync_data():
 ```python
 import httpx
 
-async def sync_data():
+async def fetch_data():
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=data)
         return response.json()
+
 ```
 
 ## Database Setup

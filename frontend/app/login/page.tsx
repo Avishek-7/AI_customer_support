@@ -27,6 +27,7 @@ export default function LoginPage() {
         credentials: "include",
         body: JSON.stringify({ email, password })
       });
+      const responseClone = response.clone();
 
       if (!response.ok) {
         let errorText = `Login failed (${response.status})`;
@@ -34,7 +35,7 @@ export default function LoginPage() {
           const errData = await response.json();
           errorText = errData?.detail || errorText;
         } catch {
-          const text = await response.text();
+          const text = await responseClone.text();
           if (text) errorText = text;
         }
         authLogger.warn("Login failed", { status: response.status, error: errorText });
@@ -78,11 +79,18 @@ export default function LoginPage() {
         <h2 className="text-xl font-semibold">Login</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <label htmlFor="login-email" className="sr-only">Email</label>
           <input className="w-full px-2 py-2 rounded bg-gray-700 text-white"
+            id="login-email"
+            type="email"
+            autoComplete="email"
             placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
 
+          <label htmlFor="login-password" className="sr-only">Password</label>
           <input className="w-full px-2 py-2 rounded bg-gray-700 text-white"
+            id="login-password"
             type="password" placeholder="Password"
+            autoComplete="current-password"
             value={password} onChange={e => setPassword(e.target.value)} />
 
           <button type="submit"

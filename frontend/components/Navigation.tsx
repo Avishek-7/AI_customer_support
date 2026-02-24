@@ -43,14 +43,14 @@ export default function Navigation() {
       </Link>
       
       <div className="flex gap-4 items-center">
-        <Link href="/profile" className="hover:text-blue-300 transition">
+        <Link href="/profile" aria-label="Profile" className="hover:text-blue-300 transition">
           👤 Profile
         </Link>
-        <Link href="/documents" className="hover:text-blue-300 transition">
+        <Link href="/documents" aria-label="Documents" className="hover:text-blue-300 transition">
           📄 Documents
         </Link>
         {isAdmin && (
-          <Link href="/admin" className="hover:text-blue-300 transition">
+          <Link href="/admin" aria-label="Admin" className="hover:text-blue-300 transition">
             ⚙️ Admin
           </Link>
         )}

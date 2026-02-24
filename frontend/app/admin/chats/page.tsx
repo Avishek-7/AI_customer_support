@@ -79,8 +79,8 @@ export default function AdminChatsPage() {
                         No chats
                       </td>
                     </tr>
-                  ) : chats.map((chat) => (
-                    <tr key={String(chat.id ?? `${String(chat.user_id)}-${String(chat.timestamp)}`)} className="hover:bg-gray-700 transition">
+                  ) : chats.map((chat, i) => (
+                    <tr key={String(chat.id ?? `${String(chat.user_id)}-${String(chat.timestamp)}-${i}`)} className="hover:bg-gray-700 transition">
                       <td className="px-6 py-4 font-medium">User #{String(chat.user_id)}</td>
                       <td className="px-6 py-4 text-gray-300 max-w-md truncate">{String(chat.message)}</td>
                       <td className="px-6 py-4 text-gray-400">

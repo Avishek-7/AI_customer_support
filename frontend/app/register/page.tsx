@@ -8,6 +8,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const emailFingerprint = async (value: string) => {
     const normalized = value.trim().toLowerCase();
@@ -16,11 +17,18 @@ export default function RegisterPage() {
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
   };
 
-  const register = async () => {
+  const register = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
     const emailHash = await emailFingerprint(email);
     if (password !== confirmPassword) {
       authLogger.warn("Registration failed - password mismatch", { emailHash });
       alert("Passwords do not match");
+      setIsSubmitting(false);
       return;
     }
 
@@ -66,10 +74,15 @@ export default function RegisterPage() {
       } else if (data.detail) {
         authLogger.warn("Registration failed", { emailHash, error: String(data.detail) });
         alert(String(data.detail));
+      } else {
+        authLogger.error("Registration response missing token/detail", { emailHash, response: data });
+        alert("Unexpected registration response, please try again");
       }
     } catch (err) {
       authLogger.error("Registration network failure", { emailHash, error: String(err) });
       alert("Unable to register right now. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -77,6 +90,8 @@ export default function RegisterPage() {
     <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
       <div className="bg-gray-800 p-6 rounded-lg w-80 space-y-4">
         <h2 className="text-xl font-semibold">Register</h2>
+
+        <form onSubmit={register} className="space-y-4">
 
         <label htmlFor="register-username" className="block text-sm">Username</label>
 
@@ -108,10 +123,13 @@ export default function RegisterPage() {
           type="password" placeholder="Confirm Password"
           value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
 
-        <button onClick={register}
-          className="w-full bg-blue-600 hover:bg-blue-700 rounded py-2">
-          Register
+        <button type="submit"
+          disabled={isSubmitting}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded py-2">
+          {isSubmitting ? "Registering..." : "Register"}
         </button>
+
+        </form>
 
       </div>
     </div>

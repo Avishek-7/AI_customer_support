@@ -23,15 +23,11 @@ export default function Page() {
         
         {!isAuthenticated ? (
           <div className="flex gap-4 justify-center">
-            <Link href="/login">
-              <button className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold">
-                Login
-              </button>
+            <Link href="/login" className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold inline-block">
+              Login
             </Link>
-            <Link href="/register">
-              <button className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold">
-                Register
-              </button>
+            <Link href="/register" className="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold inline-block">
+              Register
             </Link>
           </div>
         ) : (

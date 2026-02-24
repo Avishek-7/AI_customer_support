@@ -85,17 +85,17 @@ async def stream_llm_answer(question, context_chunks, system_prompt, chat_histor
         yield f"\n\n[Error generating response: {str(e)}]"
         return
     
-    # Post-process to remove duplicate sentences/paragraphs
-    deduplicated = _remove_duplicate_sentences(full_response)
-    
-    if len(deduplicated) < len(full_response):
-        removed_chars = len(full_response) - len(deduplicated)
-        logger.warning(f"Removed duplicates: {removed_chars} chars ({100*removed_chars/len(full_response):.1f}%)")
+    # Monitoring-only duplicate analysis.
+    # Streaming output has already been emitted token-by-token above and is intentionally not mutated here.
+    deduplicated_preview = _remove_duplicate_sentences(full_response)
+    duplicate_removed_chars = max(len(full_response) - len(deduplicated_preview), 0)
     
     logger.info("LLM stream completed", extra={
         "original_length": len(full_response),
-        "deduplicated_length": len(deduplicated),
-        "chunk_count": chunk_count
+        "deduplicated_preview_length": len(deduplicated_preview),
+        "duplicate_removed_chars": duplicate_removed_chars,
+        "stream_output_modified": False,
+        "chunk_count": chunk_count,
     })
 
 

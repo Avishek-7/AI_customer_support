@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { resetPassword, verifyResetToken } from "@/lib/api";
 import { authLogger } from "@/lib/logger";
@@ -16,6 +16,7 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -39,6 +40,11 @@ export default function ResetPasswordPage() {
           setMessage({ type: "error", text: "Invalid or expired reset token" });
           setVerifying(false);
           authLogger.warn("Invalid reset token", { error: response.detail });
+          redirectTimer = setTimeout(() => router.push("/login"), 3000);
+        } else {
+          setVerifying(false);
+          setMessage({ type: "error", text: "Unexpected response from server" });
+          authLogger.warn("Unexpected reset token verification response shape", { response });
           redirectTimer = setTimeout(() => router.push("/login"), 3000);
         }
       } catch (err) {
@@ -95,10 +101,13 @@ export default function ResetPasswordPage() {
           text: "Password reset successfully! Redirecting to chat...",
         });
         localStorage.setItem("token", response.token);
-        setTimeout(() => router.push("/chat"), 2000);
+        redirectTimeoutRef.current = setTimeout(() => router.push("/chat"), 2000);
       } else if (response.detail) {
         setMessage({ type: "error", text: response.detail });
         authLogger.warn("Password reset failed", { error: response.detail });
+      } else {
+        setMessage({ type: "error", text: "Unexpected response from server" });
+        authLogger.warn("Password reset returned unexpected response shape", { response });
       }
     } catch (err) {
       setMessage({ type: "error", text: "An error occurred. Please try again." });
@@ -107,6 +116,15 @@ export default function ResetPasswordPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+        redirectTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   if (verifying) {
     return (
@@ -141,8 +159,9 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">New Password</label>
+            <label htmlFor="new-password" className="block text-sm font-medium mb-2">New Password</label>
             <input
+              id="new-password"
               type="password"
               placeholder="At least 8 characters"
               value={password}
@@ -152,8 +171,9 @@ export default function ResetPasswordPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Confirm Password</label>
+            <label htmlFor="confirm-password" className="block text-sm font-medium mb-2">Confirm Password</label>
             <input
+              id="confirm-password"
               type="password"
               placeholder="Confirm your password"
               value={confirmPassword}

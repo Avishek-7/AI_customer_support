@@ -29,6 +29,7 @@ _IN_MEMORY_LIMITS = {}
 _IN_MEMORY_LIMITS_LOCK = threading.Lock()
 _REDIS_FAIL_COUNT = 0
 _REDIS_CIRCUIT_OPEN_UNTIL = 0.0
+_REDIS_CIRCUIT_LOCK = threading.Lock()
 _REDIS_CIRCUIT_THRESHOLD = 3
 _REDIS_CIRCUIT_SECONDS = 30
 
@@ -53,8 +54,12 @@ def _in_memory_rate_limit(key: str, limit: int, window: int):
     """Thread-safe in-memory fallback rate limiter."""
     now = time.time()
     with _IN_MEMORY_LIMITS_LOCK:
+        expired_keys = [k for k, v in _IN_MEMORY_LIMITS.items() if now >= v["expires_at"]]
+        for expired_key in expired_keys:
+            del _IN_MEMORY_LIMITS[expired_key]
+
         state = _IN_MEMORY_LIMITS.get(key)
-        if state is None or now >= state["expires_at"]:
+        if state is None:
             _IN_MEMORY_LIMITS[key] = {"count": 1, "expires_at": now + window}
             count = 1
         else:
@@ -74,8 +79,11 @@ def rate_limit_key(key: str, limit=100, window=60):
     global _REDIS_FAIL_COUNT, _REDIS_CIRCUIT_OPEN_UNTIL
 
     now = time.time()
-    if (not REDIS_AVAILABLE or redis is None) or now < _REDIS_CIRCUIT_OPEN_UNTIL:
-        if now < _REDIS_CIRCUIT_OPEN_UNTIL:
+    with _REDIS_CIRCUIT_LOCK:
+        circuit_open_until = _REDIS_CIRCUIT_OPEN_UNTIL
+
+    if (not REDIS_AVAILABLE or redis is None) or now < circuit_open_until:
+        if now < circuit_open_until:
             logger.warning("Redis circuit breaker open, using in-memory limiter", extra={"key": key})
         try:
             _in_memory_rate_limit(key=key, limit=limit, window=window)
@@ -91,24 +99,34 @@ def rate_limit_key(key: str, limit=100, window=60):
             count = int(_ATOMIC_INCR_EXPIRE_SCRIPT(keys=[key], args=[window]))
         else:
             # Fallback path if script registration failed
-            count = redis.incr(key)
-            if count == 1:
-                redis.expire(key, window)
+            pipeline = redis.pipeline(transaction=True)
+            pipeline.incr(key)
+            pipeline.expire(key, window)
+            results = pipeline.execute()
+            count = int(results[0])
 
         if count > limit:
             logger.warning(f"Rate limit exceeded", extra={"key": key, "count": count, "limit": limit})
             raise ErrorHandler.rate_limited("You have exceeded the rate limit. Please try again later.")
 
-        _REDIS_FAIL_COUNT = 0
+        with _REDIS_CIRCUIT_LOCK:
+            _REDIS_FAIL_COUNT = 0
+            _REDIS_CIRCUIT_OPEN_UNTIL = 0.0
     except HTTPException:
         raise
     except Exception as e:
-        _REDIS_FAIL_COUNT += 1
-        if _REDIS_FAIL_COUNT >= _REDIS_CIRCUIT_THRESHOLD:
-            _REDIS_CIRCUIT_OPEN_UNTIL = time.time() + _REDIS_CIRCUIT_SECONDS
+        opened_circuit = False
+        with _REDIS_CIRCUIT_LOCK:
+            _REDIS_FAIL_COUNT += 1
+            failure_count = _REDIS_FAIL_COUNT
+            if _REDIS_FAIL_COUNT >= _REDIS_CIRCUIT_THRESHOLD:
+                _REDIS_CIRCUIT_OPEN_UNTIL = time.time() + _REDIS_CIRCUIT_SECONDS
+                opened_circuit = True
+
+        if opened_circuit:
             logger.warning("Opening Redis rate-limit circuit breaker", extra={
                 "open_seconds": _REDIS_CIRCUIT_SECONDS,
-                "failure_count": _REDIS_FAIL_COUNT,
+                "failure_count": failure_count,
             })
 
         logger.error(f"Rate limit check failed: {e}", extra={"key": key})

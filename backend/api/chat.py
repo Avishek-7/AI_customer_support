@@ -269,7 +269,17 @@ async def chat_with_ai(
         ai_duration = time.perf_counter() - ai_start
         AI_ENGINE_LATENCY.labels("/query").observe(ai_duration)
 
-        data = ai_response.json()
+        try:
+            data = ai_response.json()
+        except (json.JSONDecodeError, ValueError):
+            logger.error("AI engine returned non-JSON response", extra={
+                "user_id": current_user.id,
+                "conversation_id": body.conversation_id,
+                "status_code": ai_response.status_code,
+                "response_preview": ai_response.text[:300],
+            })
+            raise ErrorHandler.service_unavailable("AI engine returned an invalid response.")
+
         await set_cached_response(
             user_id=current_user.id,
             conversation_id=body.conversation_id,
@@ -279,11 +289,16 @@ async def chat_with_ai(
             response=data,
         )
     
-    # Log the full answer received from AI engine for debugging/comparison
-    logger.info("=== BACKEND RECEIVED ANSWER ===", extra={
+    if "answer" not in data or "sources" not in data:
+        logger.error("AI response missing required keys", extra={
+            "user_id": current_user.id,
+            "conversation_id": body.conversation_id,
+            "received_keys": list(data.keys()) if isinstance(data, dict) else [],
+        })
+        raise ErrorHandler.service_unavailable("AI engine returned an incomplete response.")
+
+    logger.info("Backend received AI response", extra={
         "user_id": current_user.id,
-        "query": body.message,
-        "answer": data["answer"],
         "answer_length": len(data["answer"]),
         "sources_count": len(data["sources"])
     })
@@ -438,7 +453,7 @@ async def chat_stream(
         full_answer = "".join(full_answer_tokens)
         logger.info("Stream completed", extra={
             "user_id": current_user.id,
-            "query": body.message,
+            "query_length": len(body.message),
             "answer_length": len(full_answer),
             "token_count": len(full_answer_tokens)
         })

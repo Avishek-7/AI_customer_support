@@ -61,10 +61,10 @@ Create a new user account.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
+| Field | Type | Required | Validation / Description |
+|-------|------|----------|--------------------------|
 | `email` | string (email) | ✅ | Valid email address |
-| `password` | string | ✅ | User password |
+| `password` | string | ✅ | Min 8 chars, at least 1 uppercase letter, and at least 1 number |
 | `full_name` | string | ❌ | User's display name |
 
 **Response (200):**
@@ -234,7 +234,12 @@ Send a message and receive a complete response (non-streaming).
 | `message` | string | ✅ | - | User's question |
 | `conversation_id` | integer | ✅ | - | ID of existing conversation |
 | `system_prompt` | string | ❌ | "You are an AI customer support assistant." | Custom system prompt |
-| `document_ids` | integer[] \| null | ❌ | `null` (searches all) | Specific documents to search |
+| `document_ids` | integer[] \| null | ❌ | `null` (searches up to 20 most-recent indexed docs) | Specific documents to search |
+
+**Context & Token Limits:**
+- When `document_ids` is `null`, backend bounds retrieval to a capped subset (up to 20 docs) to avoid unbounded vector lookups.
+- Large prompts (`system_prompt` + `message`) and broad document scope increase token use and latency; prefer explicit `document_ids` selection for users with many documents.
+- For accounts with >20 documents, use client-side document selection before sending chat requests.
 
 **Response (200):**
 ```json
@@ -708,17 +713,37 @@ Search documents by content.
 **Request Body:**
 ```json
 {
-  "query": "password reset"
+  "query": "password reset",
+  "limit": 20,
+  "offset": 0
+}
+```
+
+| Field | Type | Required | Default | Constraints | Description |
+|-------|------|----------|---------|-------------|-------------|
+| `query` | string | ✅ | - | non-empty | Search text |
+| `limit` | integer | ❌ | `20` | `1-100` | Max documents returned |
+| `offset` | integer | ❌ | `0` | `>=0` | Pagination offset |
+
+**Example request:**
+```json
+{
+  "query": "password reset",
+  "limit": 20,
+  "offset": 20
 }
 ```
 
 **Response (200):**
 ```json
 {
+  "total_count": 57,
+  "next_offset": 20,
   "documents": [
     {
       "id": 1,
       "title": "Security Guide",
+      "score": 0.91,
       "content": "...",
       "owner_id": 123,
       "index_status": "completed",
@@ -728,6 +753,9 @@ Search documents by content.
 }
 ```
 
+**Ranking Note:**
+- Results are ordered by relevance score (`score`), based on backend search relevance (vector similarity and/or text relevance depending on active index).
+
 ---
 
 ### `POST /documents/update-status` (Internal)
@@ -736,12 +764,19 @@ Update document indexing status (called by AI engine).
 
 | Property | Value |
 |----------|-------|
-| Auth Required | ✅ Yes (service-to-service) |
+| Auth Required | ✅ Yes (service-to-service, internal API key only) |
 
 **Security:**
-- Required header: `X-Internal-API-Key: <internal_service_key>`
-- Caller must run on internal/trusted network (private network or service mesh)
-- Obtain the key from backend service configuration (`INTERNAL_API_KEY`) and provision it as a secret in the AI engine deployment
+- Required header: `X-Internal-API-Key: <INTERNAL_API_KEY>`
+- JWT bearer token is **not** required for this endpoint.
+- Obtain the key from backend configuration (`INTERNAL_API_KEY`) and provision it as a secret in the AI engine deployment.
+
+**Required headers example:**
+```http
+POST /documents/update-status
+X-Internal-API-Key: <INTERNAL_API_KEY>
+Content-Type: application/json
+```
 
 **Request Body:**
 ```json
@@ -784,6 +819,12 @@ List all users (admin only).
 |----------|-------|
 | Auth Required | ✅ Yes |
 | Role Required | `admin` |
+
+**Privacy & Compliance (applies to all Users endpoints):**
+- Access to user PII must be audit-logged with `actor_id`, `endpoint`, `target_user_id`, `timestamp`, and `action_reason`.
+- Admin access requires role-based justification consistent with organizational policy and legal basis.
+- User and audit-log retention/deletion schedules must follow organization policy (consult your data-retention standard).
+- Sensitive operations (`GET /users/`, `DELETE /users/{user_id}`) should use stricter approval/workflow controls.
 
 **Response (200):**
 ```json
@@ -1021,20 +1062,20 @@ List all documents across all users.
 **Query Parameters:**
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `page` | integer | ❌ | `1` | 1-based page number |
-| `per_page` | integer | ❌ | `50` | Page size (`1-200`) |
+| `limit` | integer | ❌ | `50` | Number of records to return (`1-200`) |
+| `offset` | integer | ❌ | `0` | Number of records to skip |
 
 **Example request:**
 ```http
-GET /admin/documents?page=2&per_page=25
+GET /admin/documents?limit=25&offset=25
 Authorization: Bearer <admin_token>
 ```
 
 **Response (200):**
 ```json
 {
-  "page": 2,
-  "per_page": 25,
+  "limit": 25,
+  "offset": 25,
   "total": 450,
   "returned_count": 25,
   "documents": [
@@ -1059,6 +1100,13 @@ List recent chats across all users.
 |----------|-------|
 | Auth Required | ✅ Yes |
 | Role Required | `admin` |
+
+**Privacy, Legal Basis, and Audit Requirements:**
+- Admin chat access must be justified by approved operational/legal basis (e.g., support quality, abuse investigation, legal hold).
+- Every chat-content access should be audit-logged (`actor_id`, `target_user_id`, `message_id`, `timestamp`, `action_reason`).
+- Prefer data minimization: list views should default to metadata (`message_id`, `user_id`, `timestamp`) and require explicit action to view full content.
+- Define retention for chat content and related audit records per policy and jurisdictional requirements.
+- Recommended RBAC hardening: separate `chat_viewer` permission and/or justification workflow for content access.
 
 **Response (200):**
 ```json
@@ -1306,16 +1354,46 @@ All errors follow this format:
 |----------|-------|--------|
 | `POST /auth/register` | 5 | 1 hour (per email) |
 | `POST /auth/login` | 10 | 5 minutes (per email) |
+| `POST /auth/forgot-password` | 5 | 1 hour (per client IP) |
+| `POST /auth/reset-password` | 10 | 1 hour (per client IP + token hash) |
 | `POST /chat/chat` | 100 | 1 minute (per user) |
 | `POST /documents/upload` | 20 | 1 hour (per user) |
+| `POST /documents/search` | 120 | 1 minute (per user) |
+| `POST /documents/{doc_id}/reindex` | 10 | 1 hour (per user) |
+| `GET /users/`, `POST /users/`, `PUT /users/{id}`, `DELETE /users/{id}` | 60 | 1 minute (per admin user) |
+| `GET /admin/*` | 100 | 1 minute (per admin user) |
+| `POST /vectors/sync`, `DELETE /vectors/document/{id}`, `GET /vectors/*` | internal-service limits | service policy |
+| Default / other endpoints | 100 | 1 minute (per principal) |
 
 When rate limited, you'll receive:
+
+**Response headers:**
+- `X-RateLimit-Limit`: configured request limit
+- `X-RateLimit-Remaining`: remaining requests in current window
+- `X-RateLimit-Reset`: unix timestamp when window resets
 
 ```json
 {
   "detail": "Rate limit exceeded. Try again in X seconds."
 }
 ```
+
+Example:
+```http
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1767225600
+Content-Type: application/json
+
+{
+  "detail": "Rate limit exceeded. Try again in X seconds."
+}
+```
+
+**Internal Service Exemptions:**
+- Internal service-to-service endpoints may use separate limits or exemptions based on trusted identity (`X-Internal-API-Key`) and internal network controls.
+- Exemption requests must be reviewed by platform/security owners and documented with service name, rationale, and duration.
 
 ---
 

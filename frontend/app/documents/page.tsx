@@ -35,7 +35,7 @@ export default function DocumentsPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [reindexing, setReindexing] = useState<number | null>(null);
-  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -147,13 +147,13 @@ export default function DocumentsPage() {
     if (!token) return;
 
     if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
+      clearTimeout(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
 
     docsLogger.info("Starting index status polling", { docId });
 
-    pollingIntervalRef.current = setInterval(async () => {
+    const poll = async () => {
       try {
         const status = await getDocumentStatus(docId, token);
 
@@ -165,35 +165,41 @@ export default function DocumentsPage() {
         if (status.status === "completed") {
           docsLogger.info("Document indexing completed", { docId, chunkCount: status.chunk_count });
           if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
+            clearTimeout(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
           setIndexStatus(null);
           setChunkCount(null);
           await fetchDocs();
+          return;
         }
 
         if (status.status === "failed") {
           docsLogger.error("Document indexing failed", { docId });
           if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
+            clearTimeout(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
           setError("Document indexing failed");
           setIndexStatus(null);
           setChunkCount(null);
+          return;
         }
       } catch (err) {
         docsLogger.error("Polling error", { docId, error: String(err) });
         console.error("Polling error:", err);
       }
-    }, 2000); // Poll every 2 seconds
+
+      pollingIntervalRef.current = setTimeout(poll, 2000);
+    };
+
+    await poll();
   };
 
   useEffect(() => {
     return () => {
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
+        clearTimeout(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
     };

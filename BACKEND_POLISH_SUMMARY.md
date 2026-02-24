@@ -81,6 +81,7 @@ async def enrich_conversation_list_response(db, conversations):
 ```
 
 Performance note: list endpoints should use batched/joined metadata queries (Section 10) to avoid N+1 patterns.
+Current status note: `enrich_conversation_list_response()` is implemented and removes per-conversation message-count N+1 queries via grouped/batched lookups; total enrichment work is still O(n) across the returned page, so pagination/caching or materialized counters remain useful for high-volume tenants.
 
 ### Endpoints Updated:
 - `POST /conversations` - Creates with metadata
@@ -235,7 +236,9 @@ Applied to:
 Enhanced with ErrorHandler:
 - Returns 429 with clear message
 - Logs rate limit violations
-- Uses in-memory fallback with Redis circuit-breaker behavior; returns 503 if limiter infrastructure is unavailable
+- Uses in-memory fallback with Redis circuit-breaker behavior. Important: in-memory fallback is only safe for single-instance deployments; in multi-instance deployments users can exceed effective limits because counters are not shared.
+- Production recommendation for distributed deployments: fail closed (`503`) when Redis/unified limiter storage is unavailable unless a true distributed store is active.
+- Alternatives when Redis is degraded: sticky sessions (partial mitigation), Redis as required primary with no local fallback, or immediate `503` until limiter health is restored.
 ```
 
 ### Usage Tracking:
@@ -313,7 +316,7 @@ All log unauthorized access attempts
 - `backend/utils/permissions.py` - Enhanced with ErrorHandler and logging
 
 ### Models:
-- `backend/models/chat.py` - Removed Chat table, added timestamp field
+- `backend/models/chat.py` - Removed legacy Chat table references; `ChatHistory` remains and includes timestamp fields (`timestamp`, `created_at`)
 - `backend/models/user.py` - Removed chats relationship
 - `backend/models/conversation.py` - Added updated_at field
 

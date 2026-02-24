@@ -220,10 +220,11 @@ def main():
             print("Please run the migration first:")
             print("  cd backend")
             print("  python -m migrations.add_vector_metadata")
-            return
+            sys.exit(1)
         
         # Test 4: Insert and query
-        test_insert_and_query()
+        if not test_insert_and_query():
+            sys.exit(1)
         
         print("\n" + "=" * 60)
         print("✅ ALL TESTS PASSED")
@@ -241,6 +242,7 @@ def main():
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

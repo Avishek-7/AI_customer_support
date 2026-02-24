@@ -30,17 +30,21 @@ export async function streamChat(
 
     const decoder = new TextDecoder();
 
-    while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
+    try {
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
 
-        if (value) {
-            cb(decoder.decode(value, { stream: true }));
+            if (value) {
+                cb(decoder.decode(value, { stream: true }));
+            }
         }
-    }
 
-    const remaining = decoder.decode();
-    if (remaining) {
-        cb(remaining);
+        const remaining = decoder.decode();
+        if (remaining) {
+            cb(remaining);
+        }
+    } finally {
+        reader.releaseLock();
     }
 }

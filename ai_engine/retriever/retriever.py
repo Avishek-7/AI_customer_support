@@ -14,7 +14,7 @@ logger = get_logger("ai_engine.retriever")
 class FAISSRetriever(BaseRetriever):
     """
     LangChain-compatible Retriever that uses:
-    - custome FAISS index (vectorstore/vector_store.py)
+    - custom FAISS index (vectorstore/vector_store.py)
     - embedding function (embeddings/embedder.py)
     - Returns LangChain Document objects with metadata
 

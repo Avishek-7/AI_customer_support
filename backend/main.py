@@ -1,10 +1,14 @@
-from fastapi import FastAPI, Request, Response
+import ipaddress
+import secrets
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from api import auth
 from api import chat
 from api import documents
 from api import users
 from api import admin
 from api import vectors
+from core.config import settings
 from core.database import Base, engine
 from fastapi.middleware.cors import CORSMiddleware
 from utils.logger import init_logging, get_logger, set_request_id, clear_request_id
@@ -19,6 +23,38 @@ logger = get_logger("backend.main")
 app = FastAPI(
     title="AI Customer Support Backend"
 )
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _is_internal_ip(value: str) -> bool:
+    normalized = (value or "").strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        ip = ipaddress.ip_address(normalized)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return False
+
+
+def verify_metrics_access(
+    request: Request,
+    internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
+) -> None:
+    client_ip = _get_client_ip(request)
+    if not internal_api_key or not secrets.compare_digest(internal_api_key or "", settings.INTERNAL_API_KEY or ""):
+        logger.warning("Unauthorized metrics access attempt", extra={"client_ip": client_ip})
+        raise HTTPException(status_code=401, detail="Invalid internal API key")
+
+    if not _is_internal_ip(client_ip):
+        logger.warning("Blocked non-internal metrics access", extra={"client_ip": client_ip})
+        raise HTTPException(status_code=403, detail="Metrics endpoint restricted to internal network")
 
 # CORS middleware - must be added first
 app.add_middleware(
@@ -74,7 +110,7 @@ async def request_id_middleware(request: Request, call_next):
     finally:
         clear_request_id()
 
-@app.get("/metrics")
+@app.get("/metrics", dependencies=[Depends(verify_metrics_access)])
 async def metrics_endpoint():
     data, content_type = render_metrics()
     return Response(content=data, media_type=content_type)
@@ -101,5 +137,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    await engine.dispose()
     logger.info("Backend server shutting down")
 

@@ -43,12 +43,17 @@ async def _get_redis() -> Optional[Redis]:
     if _redis_client is None:
         async with _redis_lock:
             if _redis_client is None:  # Double-check after acquiring lock
-                _redis_client = Redis.from_url(
-                    settings.REDIS_URL,
-                    decode_responses=True,
-                    socket_connect_timeout=1,
-                    socket_timeout=2,
-                )
+                try:
+                    client = Redis.from_url(
+                        settings.REDIS_URL,
+                        decode_responses=True,
+                        socket_connect_timeout=1,
+                        socket_timeout=2,
+                    )
+                    _redis_client = client
+                except Exception as exc:
+                    logger.error("Failed to initialize Redis cache client", extra={"error": str(exc)})
+                    _redis_client = None
     return _redis_client
 
 
@@ -85,7 +90,11 @@ async def get_cached_response(
 
     try:
         return json.loads(cached_value)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.exception(
+            "Cached response JSON decode failed",
+            extra={"cache_key": cache_key, "cached_preview": cached_value[:120] if isinstance(cached_value, str) else ""},
+        )
         return None
 
 

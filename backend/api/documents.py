@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import httpx
 import time
+import secrets
 from core.database import get_db
 from core.config import settings
 from core.error_handler import ErrorHandler
@@ -60,12 +61,42 @@ async def upload_document(
             "file_name": file.filename
         })
         raise ErrorHandler.bad_request("Only PDF files are allowed")
+
+    allowed_content_types = {"application/pdf"}
+    if file.content_type not in allowed_content_types:
+        logger.warning("Invalid content type", extra={
+            "user_id": current_user.id,
+            "file_name": file.filename,
+            "content_type": file.content_type,
+            "size_bytes": None,
+        })
+        raise ErrorHandler.bad_request("Invalid file content type. Only application/pdf is allowed")
     
     # Extract text from PDF (run in thread to avoid blocking)
     try:
         import asyncio
         from concurrent.futures import ThreadPoolExecutor
-        pdf_bytes = await file.read()
+        max_size_bytes = 10 * 1024 * 1024
+        chunk_size = 1024 * 1024
+        total_size = 0
+        chunks: list[bytes] = []
+
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size_bytes:
+                logger.warning("File too large", extra={
+                    "user_id": current_user.id,
+                    "file_name": file.filename,
+                    "content_type": file.content_type,
+                    "size_bytes": total_size,
+                })
+                raise ErrorHandler.bad_request("File too large. Max size is 10MB")
+            chunks.append(chunk)
+
+        pdf_bytes = b"".join(chunks)
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
             content = await loop.run_in_executor(executor, extract_text_from_pdf, pdf_bytes)
@@ -268,7 +299,7 @@ async def update_document_status(
     db: AsyncSession = Depends(get_db),
     internal_api_key: str | None = Header(default=None, alias="X-Internal-API-Key"),
 ):
-    if not internal_api_key or internal_api_key != settings.INTERNAL_API_KEY:
+    if not internal_api_key or not secrets.compare_digest(internal_api_key, settings.INTERNAL_API_KEY):
         raise ErrorHandler.forbidden("Invalid internal API key")
 
     logger.info(f"Updating document status", extra={
