@@ -27,3 +27,7 @@ redis                     # Rate limiting
 numpy                     # Required for some utilities
 prometheus-client         # Metrics
 tiktoken                  # Model token counting
+
+# === Logging ===
+structlog>=24.1.0         # Structured logging
+rich>=13.0.0              # Rich console output

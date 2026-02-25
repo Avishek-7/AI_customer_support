@@ -7,17 +7,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 import contextvars
+import structlog
+from structlog.stdlib import LoggerFactory
+from rich.logging import RichHandler
 import logging.handlers
 import threading
 
 """
-Centralized logger for the AI Engine.
+Centralized structured logger for the AI Engine using structlog and rich.
 
 Features:
-- get_logger(name): returns a configured logger
-- init_logging(): initialize root logger (called on app startup)
+- get_logger(name): returns a configured structlog logger
+- init_logging(): initialize structlog with rich console and JSON file output
 - request_id contextvar for tracking requests across async calls
-- console (human-readable) and file (JSON) handlers with rotation
+- Rich console handler for beautiful terminal output
+- JSON file handler with rotation for production logs
 """
 
 # Public context var for request/correlation id
@@ -36,52 +40,42 @@ def clear_request_id() -> None:
     request_id.set(None)
 
 
-class RequestIDFilter(logging.Filter):
-    """Attach the current request_id (if any) to every LogRecord."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = request_id.get()
-        return True
+def add_request_id(logger, method_name, event_dict):
+    """Processor to add request_id to structlog events."""
+    rid = request_id.get()
+    if rid:
+        event_dict["request_id"] = rid
+    return event_dict
 
 
 class JsonFormatter(logging.Formatter):
-    """JSON formatter for structured logs."""
+    """JSON formatter for file logging with structlog compatibility."""
 
     def format(self, record: logging.LogRecord) -> str:
-        payload = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "funcName": record.funcName,
-            "line": record.lineno,
-            "request_id": getattr(record, "request_id", None),
-        }
-        if record.exc_info:
-            payload["exc_info"] = self.formatException(record.exc_info)
-        # Include extra keys passed in logging call
-        for k, v in record.__dict__.items():
-            if k not in ("name", "msg", "args", "levelname", "levelno", "pathname",
-                         "filename", "module", "exc_info", "exc_text", "stack_info",
-                         "lineno", "funcName", "created", "msecs", "relativeCreated",
-                         "thread", "threadName", "processName", "process", "message",
-                         "request_id"):
-                try:
-                    json.dumps({k: v})
-                    payload[k] = v
-                except Exception:
-                    payload[k] = str(v)
-        return json.dumps(payload, ensure_ascii=False)
-
-
-class ConsoleFormatter(logging.Formatter):
-    """Human-readable console formatter with optional request_id."""
-    
-    def format(self, record: logging.LogRecord) -> str:
-        rid = getattr(record, "request_id", None)
-        record.request_id_part = f" [req={rid}]" if rid else ""
-        return super().format(record)
+        # Extract structlog's event_dict if present
+        event_dict = getattr(record, "event_dict", None)
+        if event_dict:
+            payload = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "level": record.levelname,
+                "logger": record.name,
+                **event_dict
+            }
+        else:
+            # Fallback for non-structlog messages
+            payload = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+                "module": record.module,
+                "funcName": record.funcName,
+                "line": record.lineno,
+            }
+            if record.exc_info:
+                payload["exc_info"] = self.formatException(record.exc_info)
+        
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def _default_log_dir() -> Path:
@@ -101,7 +95,8 @@ def init_logging(
     backup_count: int = 5,
 ) -> None:
     """
-    Initialize the root logger. Safe to call multiple times.
+    Initialize structlog with rich console output and JSON file logging.
+    Safe to call multiple times.
     
     Args:
         level: logging level (defaults to env LOG_LEVEL or INFO)
@@ -115,23 +110,25 @@ def init_logging(
         if _logger_initialized:
             return
 
+        # Configure stdlib logging first
         root = logging.getLogger()
 
         env_level = os.getenv("LOG_LEVEL", "INFO").upper()
         chosen_level = level if level is not None else getattr(logging, env_level, logging.INFO)
         root.setLevel(chosen_level)
 
-        request_filter = RequestIDFilter()
-
-        ch = logging.StreamHandler(sys.stdout)
+        # Rich console handler for beautiful terminal output
+        ch = RichHandler(
+            rich_tracebacks=True,
+            markup=True,
+            show_time=True,
+            show_level=True,
+            show_path=False,
+        )
         ch.setLevel(chosen_level)
-        ch.setFormatter(ConsoleFormatter(
-            "%(asctime)s %(levelname)-8s [%(name)s] %(message)s%(request_id_part)s",
-            "%Y-%m-%d %H:%M:%S"
-        ))
-        ch.addFilter(request_filter)
         root.addHandler(ch)
 
+        # JSON file handler for production logs
         log_dir = Path(log_dir) if log_dir is not None else _default_log_dir()
         filename = filename or os.getenv("LOG_FILE", "ai_engine.log")
 
@@ -145,22 +142,45 @@ def init_logging(
             )
             fh.setLevel(chosen_level)
             fh.setFormatter(JsonFormatter())
-            fh.addFilter(request_filter)
             root.addHandler(fh)
         except Exception:
             root.warning("Failed to initialize file handler; continuing with console only", exc_info=True)
 
+        # Configure structlog
+        structlog.configure(
+            processors=[
+                structlog.contextvars.merge_contextvars,
+                add_request_id,
+                structlog.stdlib.filter_by_level,
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.UnicodeDecoder(),
+                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
+            logger_factory=LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            context_class=dict,
+            cache_logger_on_first_use=True,
+        )
+
         _logger_initialized = True
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> structlog.stdlib.BoundLogger:
     """
-    Return a configured logger with the given name.
+    Return a configured structlog logger with the given name.
     Automatically initializes logging if not already done.
+    
+    Returns:
+        A structlog BoundLogger instance that supports structured logging
     """
     if not logging.getLogger().handlers:
         init_logging()
-    return logging.getLogger(name)
+    return structlog.get_logger(name)
 
 
 # Module-level logger

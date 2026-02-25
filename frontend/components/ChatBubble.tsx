@@ -42,11 +42,10 @@ export default function ChatBubble({
                   code({ className, children, node, ...props }) {
                     const match = /language-(\w+)/.exec(className || "");
                     const lang = match ? match[1] : "";
-                    const inlineProp = (props as { inline?: boolean }).inline;
-                    const parentTag = (node as { parent?: { tagName?: string } } | undefined)?.parent?.tagName;
-                    const inferredBlock = parentTag === "pre";
-                    const isInline = inferredBlock ? false : inlineProp === true;
-                    if (!isInline) {
+                    const parentNode = (node as any)?.parent;
+                    const isCodeBlock = parentNode?.tagName === "pre";
+                    
+                    if (isCodeBlock) {
                       return (
                         <SyntaxHighlighter
                           style={oneDark as { [key: string]: React.CSSProperties }}
@@ -57,11 +56,17 @@ export default function ChatBubble({
                         </SyntaxHighlighter>
                       );
                     }
+                    
+                    // Inline code - don't render SyntaxHighlighter for inline code in paragraphs
                     return (
-                      <code className={className} {...props}>
+                      <code className="bg-gray-900 px-1.5 py-0.5 rounded text-sm" {...props}>
                         {children}
                       </code>
                     );
+                  },
+                  pre({ children }) {
+                    // Block-level pre tag - render as-is since code component handles styling
+                    return <pre className="overflow-x-auto">{children}</pre>;
                   },
                 }}
               >

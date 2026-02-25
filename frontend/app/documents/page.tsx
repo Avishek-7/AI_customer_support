@@ -70,7 +70,6 @@ export default function DocumentsPage() {
   };
 
   useEffect(() => {
-    const token = getToken();
     const token = getStoredToken();
     if (!token) {
       window.location.href = "/login";

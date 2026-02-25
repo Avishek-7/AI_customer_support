@@ -59,7 +59,8 @@ async def save_chat_turn(
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found or access denied for user {user_id}")
 
-        timestamp = datetime.now(timezone.utc)
+        # Use naive datetime to match database TIMESTAMP WITHOUT TIME ZONE columns
+        timestamp = datetime.utcnow()
         
         user_chat = ChatHistory(
             user_id=user_id,

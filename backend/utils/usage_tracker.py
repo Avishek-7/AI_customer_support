@@ -16,14 +16,18 @@ def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
     if not text:
         return 0
 
-    tiktoken = importlib.import_module("tiktoken")
-
     try:
-        encoding = tiktoken.encoding_for_model(model)
-    except KeyError:
-        encoding = tiktoken.get_encoding("cl100k_base")
-
-    return len(encoding.encode(text))
+        tiktoken = importlib.import_module("tiktoken")
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+    except ImportError:
+        # Fallback: rough estimation if tiktoken is not installed
+        # Approximate 4 characters per token for English text
+        logger.warning("tiktoken not installed, using approximate token count")
+        return len(text) // 4
 
 async def track_usage(db, user_id, endpoint, tokens, latency):
     db.add(APIUsage(

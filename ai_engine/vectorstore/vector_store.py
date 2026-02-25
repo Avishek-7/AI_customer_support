@@ -202,7 +202,6 @@ def delete_document(document_id: int) -> None:
             headers=_internal_headers(),
             timeout=10.0,
         )
-                headers=_internal_headers(),
 
         if response.status_code != 200:
             compensation = requests.post(
