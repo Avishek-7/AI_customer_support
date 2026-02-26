@@ -235,7 +235,7 @@ export default function DocumentsPage() {
   };
 
   const handleEditSave = async (docId: number) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     docsLogger.info("Updating document", { docId, title: editTitle });
@@ -263,7 +263,7 @@ export default function DocumentsPage() {
 
   // Handle reindex
   const handleReindex = async (docId: number) => {
-    const token = getToken();
+    const token = getStoredToken();
     if (!token) return;
 
     if (!confirm("Re-index this document? This may take a moment.")) return;
@@ -439,7 +439,7 @@ export default function DocumentsPage() {
                       </button>
                       <button
                         onClick={async () => {
-                          const token = getToken();
+                          const token = getStoredToken();
                           if (token && confirm("Delete this document?")) {
                             try {
                               const res = await fetch(`${API_BASE}/documents/${doc.id}`, {

@@ -43,6 +43,7 @@ services:
     environment:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       BACKEND_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-api-key-change-in-production}
     volumes:
       - ai_engine_data:/app/data
     ports:
@@ -71,6 +72,7 @@ services:
       SMTP_PORT: 1025
       SMTP_FROM: ${SMTP_FROM:-"MeetingIntel <no-reply@local.test>"}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-api-key-change-in-production}
     ports:
       - "8000:8000"
     depends_on:

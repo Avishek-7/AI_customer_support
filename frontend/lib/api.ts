@@ -20,6 +20,51 @@ type RequestOptions = {
     allowNoContent?: boolean;
 };
 
+type ApiSource = {
+    title?: string;
+    document_id?: number;
+    chunk_id?: number;
+};
+
+type ApiMessage = {
+    role: "user" | "assistant";
+    content: string;
+    sources?: ApiSource[];
+};
+
+type ApiConversation = {
+    id: number;
+    title: string;
+    created_at: string;
+    updated_at?: string;
+};
+
+type GetAllConversationsResponse = {
+    conversations?: ApiConversation[];
+};
+
+type ConversationMessagesResponse = {
+    history?: ApiMessage[];
+};
+
+type ApiDocument = {
+    id: number;
+    title: string;
+    content: string;
+    owner_id: number;
+    index_status?: string;
+    chunk_count?: number;
+};
+
+type SearchDocumentsResponse = {
+    documents?: ApiDocument[];
+};
+
+type DocumentStatusResponse = {
+    status: string;
+    chunk_count: number;
+};
+
 async function parseResponseBody(response: Response): Promise<unknown> {
     if (response.status === 204) {
         return null;
@@ -48,7 +93,7 @@ function buildRequestHeaders(token?: string, extraHeaders?: Record<string, strin
     };
 }
 
-async function requestJson<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+async function requestJson<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", token, body, headers, throwOnError = false, allowNoContent = false } = options;
     const response = await fetch(`${API_BASE}${path}`, {
         method,
@@ -140,7 +185,7 @@ export async function deleteUser(userId: number, token: string) {
 // ============================================================================
 
 export async function createConversation(token: string, title?: string) {
-    return requestJson("/chat/conversations", {
+    return requestJson<ApiConversation>("/chat/conversations", {
         method: "POST",
         token,
         body: { title: title || "New Conversation" },
@@ -148,15 +193,15 @@ export async function createConversation(token: string, title?: string) {
 }
 
 export async function getAllConversations(token: string) {
-    return requestJson("/chat/conversations", { token, throwOnError: true });
+    return requestJson<GetAllConversationsResponse>("/chat/conversations", { token, throwOnError: true });
 }
 
 export async function getConversation(conversationId: number, token: string) {
-    return requestJson(`/chat/conversations/${conversationId}`, { token });
+    return requestJson<ApiConversation>(`/chat/conversations/${conversationId}`, { token });
 }
 
 export async function updateConversation(conversationId: number, token: string, title: string) {
-    return requestJson(`/chat/conversations/${conversationId}`, {
+    return requestJson<ApiConversation>(`/chat/conversations/${conversationId}`, {
         method: "PATCH",
         token,
         body: { title },
@@ -172,7 +217,7 @@ export async function deleteConversation(conversationId: number, token: string) 
 }
 
 export async function getConversationMessages(conversationId: number, token: string) {
-    return requestJson(`/chat/conversations/${conversationId}/messages`, {
+    return requestJson<ConversationMessagesResponse>(`/chat/conversations/${conversationId}/messages`, {
         token,
         throwOnError: true,
     });
@@ -268,19 +313,19 @@ export async function updateDocument(
     token: string,
     data: { title?: string; content?: string }
 ) {
-    return requestJson(`/documents/${docId}`, { method: "PUT", token, body: data });
+    return requestJson<ApiDocument>(`/documents/${docId}`, { method: "PUT", token, body: data });
 }
 
 export async function searchDocuments(query: string, token: string) {
-    return requestJson("/documents/search", { method: "POST", token, body: { query } });
+    return requestJson<SearchDocumentsResponse>("/documents/search", { method: "POST", token, body: { query } });
 }
 
 export async function reindexDocument(docId: number, token: string) {
-    return requestJson(`/documents/${docId}/reindex`, { method: "POST", token });
+    return requestJson<DocumentStatusResponse>(`/documents/${docId}/reindex`, { method: "POST", token });
 }
 
 export async function getDocumentStatus(docId: number, token: string) {
-    return requestJson(`/documents/status/${docId}`, { token });
+    return requestJson<DocumentStatusResponse>(`/documents/status/${docId}`, { token });
 }
 
 // ============================================================================
