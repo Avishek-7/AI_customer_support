@@ -44,12 +44,19 @@ Thumbs.db
 *.swp
 *.swo
 
+# Testing & Coverage
+.coverage
+.coverage.*
+htmlcov/
+
 # FAISS data (large binary files)
 ai_engine/data/faiss_index.bin
 
-# Docker (root-level local orchestration files)
-docker-compose.yml
+# Docker (local overrides only - keep main compose file tracked)
+docker-compose.override.yml
 
 # Misc
 *.pem
+*.bak
 tsconfig.tsbuildinfo
+pip-wheel-metadata/

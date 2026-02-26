@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { authLogger } from "@/lib/logger";
 import { setStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+  const API_BASE = getApiBase();
 
   const safeEmailFingerprint = async (value: string) => {
     const normalized = value.trim().toLowerCase();

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getAuthHeaders, getStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 
 type UploadModalProps = {
   isOpen: boolean;
@@ -19,7 +20,7 @@ export default function UploadModal({ isOpen, onClose, onUploadComplete }: Uploa
   const uploadAbortRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+  const API_BASE = getApiBase();
 
   const handleUpload = async () => {
     const token = getStoredToken();

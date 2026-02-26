@@ -25,7 +25,9 @@ sql_app.db
 
 # Alembic
 alembic.ini
-migrations/
+
+# Migrations (keep migration scripts, ignore cache)
+migrations/__pycache__/
 
 # Misc
 .DS_Store

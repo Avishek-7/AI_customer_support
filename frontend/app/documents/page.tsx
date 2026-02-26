@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { docsLogger } from "@/lib/logger";
 import { getAuthHeaders, getStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 import {
   updateDocument,
   searchDocuments,
@@ -38,7 +39,7 @@ export default function DocumentsPage() {
   const [reindexing, setReindexing] = useState<number | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+  const API_BASE = getApiBase();
 
   const fetchDocs = async () => {
     const token = getStoredToken();

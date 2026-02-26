@@ -28,5 +28,8 @@ models/
 # Sentence transformers cache
 .cache/
 
+# Memory/conversation data
+memory/*.json
+
 # Misc
 .DS_Store

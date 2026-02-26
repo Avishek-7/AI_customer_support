@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { getAuthHeaders, getStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = getApiBase();
 
 export default function ChatHistoryPage() {
   const [history, setHistory] = useState<any[]>([]);

@@ -39,25 +39,15 @@ export default function ChatBubble({
               <ReactMarkdown
                 rehypePlugins={[rehypeHighlight]}
                 components={{
-                  code({ className, children, node, ...props }) {
-                    const match = /language-(\w+)/.exec(className || "");
-                    const lang = match ? match[1] : "";
-                    const parentNode = (node as any)?.parent;
-                    const isCodeBlock = parentNode?.tagName === "pre";
-                    
-                    if (isCodeBlock) {
+                  code({ className, children, ...props }) {
+                    const isBlock = Boolean(className && className.includes("language-"));
+                    if (isBlock) {
                       return (
-                        <SyntaxHighlighter
-                          style={oneDark as { [key: string]: React.CSSProperties }}
-                          language={lang}
-                          PreTag="div"
-                        >
-                          {String(children).replace(/\n$/, "")}
-                        </SyntaxHighlighter>
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
                       );
                     }
-                    
-                    // Inline code - don't render SyntaxHighlighter for inline code in paragraphs
                     return (
                       <code className="bg-gray-900 px-1.5 py-0.5 rounded text-sm" {...props}>
                         {children}
@@ -65,7 +55,26 @@ export default function ChatBubble({
                     );
                   },
                   pre({ children }) {
-                    // Block-level pre tag - render as-is since code component handles styling
+                    const childArray = React.Children.toArray(children);
+                    const firstChild = childArray[0];
+                    const isCodeElement = React.isValidElement(firstChild) && firstChild.type === "code";
+
+                    if (isCodeElement) {
+                      const className = (firstChild.props as { className?: string }).className || "";
+                      const match = /language-(\w+)/.exec(className);
+                      const lang = match ? match[1] : "";
+                      const codeText = String((firstChild.props as { children?: React.ReactNode }).children ?? "");
+                      return (
+                        <SyntaxHighlighter
+                          style={oneDark as { [key: string]: React.CSSProperties }}
+                          language={lang}
+                          PreTag="div"
+                        >
+                          {codeText.replace(/\n$/, "")}
+                        </SyntaxHighlighter>
+                      );
+                    }
+
                     return <pre className="overflow-x-auto">{children}</pre>;
                   },
                 }}

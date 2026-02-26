@@ -2,7 +2,8 @@
 .venv/
 venv/
 env/
-.env
+.env*
+!.env.example
 
 # Python cache
 __pycache__/
@@ -18,11 +19,14 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/.venv/lib/
+/.venv/lib64/
+/venv/lib/
+/venv/lib64/
+/env/lib/
+/env/lib64/
 parts/
 sdist/
-var/
 wheels/
 *.egg-info/
 .installed.cfg
@@ -61,5 +65,9 @@ Dockerfile
 *.db
 *.sqlite3
 
+# Migration cache (keep scripts, ignore cache)
+migrations/__pycache__/
+
 # Misc
 *.md
+!README.md

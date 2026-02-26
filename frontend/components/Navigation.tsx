@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { clearStoredToken, getAuthHeaders, getStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 
 export default function Navigation() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const token = getStoredToken();
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const apiBase = getApiBase();
     if (!token || !apiBase) {
       setIsAdmin(false);
       return;

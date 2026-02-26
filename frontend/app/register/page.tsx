@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { authLogger } from "@/lib/logger";
 import { setStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -36,7 +37,7 @@ export default function RegisterPage() {
     authLogger.info("Registration attempt", { emailHash, username });
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
+      const response = await fetch(`${getApiBase()}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, full_name: username })

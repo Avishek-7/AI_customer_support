@@ -15,12 +15,12 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
-
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash appuser
-RUN chown -R appuser:appuser /app
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
 USER appuser
 
 EXPOSE 8000

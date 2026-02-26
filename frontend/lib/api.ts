@@ -3,8 +3,9 @@
  */
 
 import { getAuthHeaders } from "./auth";
+import { getApiBase } from "./runtimeEnv";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE = getApiBase();
 
 if (!API_BASE) {
     throw new Error("NEXT_PUBLIC_API_URL is required for frontend API client");

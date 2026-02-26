@@ -9,6 +9,7 @@ import Navigation from "./../../components/Navigation";
 import ResizableSidebar from "./../../components/ResizableSidebar";
 import { chatLogger } from "@/lib/logger";
 import { clearStoredToken, getAuthHeaders, getStoredToken } from "@/lib/auth";
+import { getApiBase } from "@/lib/runtimeEnv";
 import {
   streamChatMessage,
   getAllConversations,
@@ -48,7 +49,7 @@ export default function ChatPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+  const API_BASE = getApiBase();
 
   // Fetch conversations
   const fetchConversations = useCallback(async () => {
