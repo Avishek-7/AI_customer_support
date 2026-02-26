@@ -93,7 +93,7 @@ function buildRequestHeaders(token?: string, extraHeaders?: Record<string, strin
     };
 }
 
-async function requestJson<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
+async function requestJson<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", token, body, headers, throwOnError = false, allowNoContent = false } = options;
     const response = await fetch(`${API_BASE}${path}`, {
         method,
@@ -123,18 +123,18 @@ async function requestJson<T = any>(path: string, options: RequestOptions = {}):
 // ============================================================================
 
 export async function forgotPassword(email: string) {
-    return requestJson("/auth/forgot-password", { method: "POST", body: { email } });
+    return requestJson<{ message?: string; detail?: string }>("/auth/forgot-password", { method: "POST", body: { email } });
 }
 
 export async function resetPassword(token: string, newPassword: string) {
-    return requestJson("/auth/reset-password", {
+    return requestJson<{ message?: string; detail?: string }>("/auth/reset-password", {
         method: "POST",
         body: { token, new_password: newPassword },
     });
 }
 
 export async function verifyResetToken(token: string) {
-    return requestJson(`/auth/reset-password/${token}`);
+    return requestJson<{ valid?: boolean; message?: string }>(`/auth/reset-password/${token}`);
 }
 
 // ============================================================================
@@ -333,35 +333,35 @@ export async function getDocumentStatus(docId: number, token: string) {
 // ============================================================================
 
 export async function getAdminUsers(token: string) {
-    return requestJson("/admin/users", { token });
+    return requestJson<Record<string, unknown>[]>("/admin/users", { token });
 }
 
 export async function getAdminUsageStats(token: string) {
-    return requestJson("/admin/usage-stats", { token });
+    return requestJson<Record<string, unknown>>("/admin/usage-stats", { token });
 }
 
 export async function getAdminSystemStats(token: string) {
-    return requestJson("/admin/system-stats", { token });
+    return requestJson<Record<string, unknown>>("/admin/system-stats", { token });
 }
 
 export async function getAdminUserUsage(userId: number, token: string) {
-    return requestJson(`/admin/users/${userId}/usage`, { token });
+    return requestJson<Record<string, unknown>>(`/admin/users/${userId}/usage`, { token });
 }
 
 export async function getAdminDocuments(token: string) {
-    return requestJson("/admin/documents", { token });
+    return requestJson<Record<string, unknown>[]>("/admin/documents", { token });
 }
 
 export async function getAdminChats(token: string) {
-    return requestJson("/admin/chats", { token });
+    return requestJson<Record<string, unknown>[]>("/admin/chats", { token });
 }
 
 export async function getAdminStats(token: string) {
-    return requestJson("/admin/stats", { token });
+    return requestJson<Record<string, unknown>>("/admin/stats", { token });
 }
 
 export async function getAdminConversationDebug(conversationId: number, token: string) {
-    return requestJson(`/admin/debug/conversations/${conversationId}`, { token });
+    return requestJson<Record<string, unknown>>(`/admin/debug/conversations/${conversationId}`, { token });
 }
 
 // ============================================================================
