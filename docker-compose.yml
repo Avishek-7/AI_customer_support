@@ -70,7 +70,7 @@ services:
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
       SMTP_FROM: ${SMTP_FROM:-"MeetingIntel <no-reply@local.test>"}
-      FRONTEND_URL: ${FRONTEND_URL:-http://192.168.1.50:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "8000:8000"
     depends_on:

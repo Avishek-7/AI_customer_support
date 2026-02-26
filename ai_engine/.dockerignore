@@ -26,7 +26,8 @@ eggs/
 /env/lib64/
 parts/
 sdist/
-var/ # verified: no ai_engine/var directory present
+var/
+# verified: no ai_engine/var directory present
 wheels/
 *.egg-info/
 .installed.cfg

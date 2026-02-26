@@ -35,11 +35,12 @@ try:
     
     print("Adding index_status column...")
     try:
-        cursor.execute("ALTER TABLE documents ADD COLUMN index_status VARCHAR DEFAULT 'pending'")
+        cursor.execute("ALTER TABLE documents ADD COLUMN index_status VARCHAR(50) DEFAULT 'pending'")
         print("✓ index_status column added")
     except psycopg2.Error as e:
         if "already exists" in str(e):
             print("✓ index_status column already exists")
+            conn.rollback()
         else:
             print(f"✗ Error: {e}")
     
@@ -50,6 +51,7 @@ try:
     except psycopg2.Error as e:
         if "already exists" in str(e):
             print("✓ chunk_count column already exists")
+            conn.rollback()
         else:
             print(f"✗ Error: {e}")
     
@@ -69,22 +71,16 @@ except ImportError:
         
         with engine.begin() as connection:
             try:
-                connection.execute(text("ALTER TABLE documents ADD COLUMN index_status VARCHAR DEFAULT 'pending'"))
+                connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS index_status VARCHAR(50) DEFAULT 'pending'"))
                 print("✓ index_status column added")
             except Exception as e:
-                if "already exists" in str(e):
-                    print("✓ index_status column already exists")
-                else:
-                    print(f"✗ Error: {e}")
+                print(f"✗ Error: {e}")
             
             try:
-                connection.execute(text("ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0"))
+                connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS chunk_count INTEGER DEFAULT 0"))
                 print("✓ chunk_count column added")
             except Exception as e:
-                if "already exists" in str(e):
-                    print("✓ chunk_count column already exists")
-                else:
-                    print(f"✗ Error: {e}")
+                print(f"✗ Error: {e}")
         
         print("\n✓ Migration completed successfully!")
     except Exception as e:

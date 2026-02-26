@@ -18,7 +18,7 @@ def migrate():
             # Add index_status column if it doesn't exist
             try:
                 connection.execute(
-                    text("ALTER TABLE documents ADD COLUMN index_status VARCHAR DEFAULT 'pending'")
+                    text("ALTER TABLE documents ADD COLUMN index_status VARCHAR(50) DEFAULT 'pending'")
                 )
                 print("✓ index_status column added")
             except Exception as e:

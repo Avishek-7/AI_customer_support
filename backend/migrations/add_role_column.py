@@ -14,13 +14,12 @@ from core.config import settings
 def migrate():
     engine = create_engine(settings.DATABASE_URL)
     
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         try:
             # Add role column with default value 'user'
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'user'"
             ))
-            conn.commit()
             print("✓ Successfully added role column to users table")
             
             # Optionally set first user as admin
@@ -28,9 +27,8 @@ def migrate():
             first_user = result.fetchone()
             if first_user:
                 conn.execute(text(
-                    f"UPDATE users SET role = 'admin' WHERE id = {first_user[0]}"
-                ))
-                conn.commit()
+                    "UPDATE users SET role = :role WHERE id = :id"
+                ), {"role": "admin", "id": first_user[0]})
                 print(f"✓ Set user ID {first_user[0]} as admin")
                 
         except Exception as e:

@@ -185,5 +185,3 @@ def get_logger(name: Optional[str] = None) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)
 
 
-# Convenience: module-level logger
-logger = get_logger(__name__)

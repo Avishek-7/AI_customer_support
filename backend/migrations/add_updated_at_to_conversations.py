@@ -20,7 +20,8 @@ def migrate():
             result = conn.execute(text(
                 """
                 SELECT column_name FROM information_schema.columns 
-                WHERE table_name='conversations' AND column_name='updated_at'
+                WHERE table_name='conversations' AND column_name='updated_at' 
+                AND table_schema = current_schema()
                 """
             ))
             

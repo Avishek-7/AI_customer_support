@@ -3,7 +3,6 @@
 
 import React from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -37,7 +36,6 @@ export default function ChatBubble({
           <div className={`${isUser ? "bg-blue-600" : "bg-gray-800"} p-4 rounded-2xl whitespace-pre-wrap`}>
             <div className="prose prose-invert max-w-none">
               <ReactMarkdown
-                rehypePlugins={[rehypeHighlight]}
                 components={{
                   code({ className, children, ...props }) {
                     const isBlock = Boolean(className && className.includes("language-"));
@@ -54,7 +52,7 @@ export default function ChatBubble({
                       </code>
                     );
                   },
-                  pre({ children }) {
+                  pre({ children, node }) {
                     const childArray = React.Children.toArray(children);
                     const firstChild = childArray[0];
                     const isCodeElement = React.isValidElement(firstChild) && firstChild.type === "code";
@@ -63,7 +61,19 @@ export default function ChatBubble({
                       const className = (firstChild.props as { className?: string }).className || "";
                       const match = /language-(\w+)/.exec(className);
                       const lang = match ? match[1] : "";
-                      const codeText = String((firstChild.props as { children?: React.ReactNode }).children ?? "");
+                      
+                      // Extract raw code text by traversing children
+                      const extractText = (node: React.ReactNode): string => {
+                        if (typeof node === "string") return node;
+                        if (Array.isArray(node)) return node.map(extractText).join("");
+                        if (React.isValidElement(node) && (node.props as { children?: React.ReactNode }).children) {
+                          return extractText((node.props as { children?: React.ReactNode }).children);
+                        }
+                        return "";
+                      };
+                      
+                      const codeText = extractText((firstChild.props as { children?: React.ReactNode }).children ?? "");
+                      
                       return (
                         <SyntaxHighlighter
                           style={oneDark as { [key: string]: React.CSSProperties }}

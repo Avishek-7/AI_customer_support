@@ -15,7 +15,7 @@ try:
     with engine.begin() as connection:
         print("Adding index_status column...")
         try:
-            connection.execute(text("ALTER TABLE documents ADD COLUMN index_status VARCHAR DEFAULT 'pending'"))
+            connection.execute(text("ALTER TABLE documents ADD COLUMN index_status VARCHAR(50) DEFAULT 'pending'"))
             print("✓ index_status column added")
         except Exception as e:
             if "already exists" in str(e).lower():

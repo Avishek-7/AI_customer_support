@@ -34,28 +34,29 @@ try:
         password=password
     )
     
-    cursor = conn.cursor()
-    
-    print("Adding conversation_id column to chat_history...")
     try:
-        cursor.execute("""
-            ALTER TABLE chat_history 
-            ADD COLUMN conversation_id INTEGER 
-            REFERENCES conversations(id) ON DELETE CASCADE
-        """)
-        conn.commit()
-        print("✓ conversation_id column added successfully")
-    except psycopg2.Error as e:
-        if "already exists" in str(e):
-            print("✓ conversation_id column already exists")
-            conn.rollback()
-        else:
-            print(f"✗ Error: {e}")
-            conn.rollback()
-            sys.exit(1)
-    
-    cursor.close()
-    conn.close()
+        cursor = conn.cursor()
+        try:
+            print("Adding conversation_id column to chat_history...")
+            cursor.execute("""
+                ALTER TABLE chat_history 
+                ADD COLUMN conversation_id INTEGER 
+                REFERENCES conversations(id) ON DELETE CASCADE
+            """)
+            conn.commit()
+            print("✓ conversation_id column added successfully")
+        except psycopg2.Error as e:
+            if "already exists" in str(e):
+                print("✓ conversation_id column already exists")
+                conn.rollback()
+            else:
+                print(f"✗ Error: {e}")
+                conn.rollback()
+                sys.exit(1)
+        finally:
+            cursor.close()
+    finally:
+        conn.close()
     print("\n✓ Migration completed successfully!")
     
 except ImportError:
