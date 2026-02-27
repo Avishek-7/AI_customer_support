@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, AliasChoices
+from typing import Annotated, List, Optional
 
 
 class UserCreate(BaseModel):
@@ -19,7 +19,9 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    model_config = ConfigDict(populate_by_name=True)
+
+    email: Annotated[str, EmailStr(), Field(validation_alias=AliasChoices("email", "username"))]
     password: str
 
 
