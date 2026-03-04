@@ -63,7 +63,7 @@ def test_forgot_password_unthrottled(monkeypatch):
         limiter_calls.append((key, limit, window))
 
     monkeypatch.setattr(auth, "rate_limit_key", _limit_ok)
-    monkeypatch.setattr(auth, "create_access_token", lambda data: "reset-token-abc")
+    monkeypatch.setattr(auth, "_create_password_reset_token", lambda user_id, expires_minutes=30: "reset-token-abc")
     monkeypatch.setattr(auth, "send_reset_email", lambda to, reset_token: True)
 
     payload = ForgotPasswordRequest(email="user@example.com")

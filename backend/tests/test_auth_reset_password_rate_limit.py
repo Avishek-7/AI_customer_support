@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi import HTTPException
@@ -56,7 +57,13 @@ def _build_request(client_ip="127.0.0.1", x_forwarded_for=None):
 
 def test_reset_password_unthrottled(monkeypatch):
     token = "reset-token-xyz"
-    user = SimpleNamespace(id=303, reset_token=token, reset_token_used=False, password_hash="old-hash")
+    user = SimpleNamespace(
+        id=303,
+        reset_token=token,
+        reset_token_used=False,
+        reset_token_expires_at=datetime.utcnow() + timedelta(hours=1),
+        password_hash="old-hash",
+    )
     db = _FakeDB(user=user)
     limiter_calls = []
 
@@ -64,7 +71,7 @@ def test_reset_password_unthrottled(monkeypatch):
         limiter_calls.append((key, limit, window))
 
     monkeypatch.setattr(auth, "rate_limit_key", _limit_ok)
-    monkeypatch.setattr(auth, "decode_access_token", lambda _token: "303")
+    monkeypatch.setattr(auth, "_decode_password_reset_token", lambda _token: "303")
     monkeypatch.setattr(auth, "hash_password", lambda _password: "new-hash")
     monkeypatch.setattr(auth, "create_access_token", lambda data: "new-access-token")
 
