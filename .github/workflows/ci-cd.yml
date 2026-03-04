@@ -70,6 +70,8 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
     steps:
       - name: Checkout
         uses: actions/checkout@v4

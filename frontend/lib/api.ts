@@ -5,10 +5,12 @@
 import { getAuthHeaders } from "./auth";
 import { getApiBase } from "./runtimeEnv";
 
-const API_BASE = getApiBase();
-
-if (!API_BASE) {
-    throw new Error("NEXT_PUBLIC_API_URL is required for frontend API client");
+function getApiBaseUrl(): string {
+    const base = getApiBase();
+    if (!base) {
+        throw new Error("NEXT_PUBLIC_API_URL is required for frontend API client");
+    }
+    return base;
 }
 
 type RequestOptions = {
@@ -95,7 +97,7 @@ function buildRequestHeaders(token?: string, extraHeaders?: Record<string, strin
 
 async function requestJson<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
     const { method = "GET", token, body, headers, throwOnError = false, allowNoContent = false } = options;
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
         method,
         headers: buildRequestHeaders(token, headers, body !== undefined),
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -258,7 +260,7 @@ export async function streamChatMessage(
         document_ids?: number[];
     }
 ) {
-    const response = await fetch(`${API_BASE}/chat/stream`, {
+    const response = await fetch(`${getApiBaseUrl()}/chat/stream`, {
         method: "POST",
         headers: buildRequestHeaders(token, undefined, true),
         body: JSON.stringify({
