@@ -127,14 +127,14 @@ export async function forgotPassword(email: string) {
 }
 
 export async function resetPassword(token: string, newPassword: string) {
-    return requestJson<{ message?: string; detail?: string }>("/auth/reset-password", {
+    return requestJson<{ token?: string; token_type?: string; detail?: string; message?: string }>("/auth/reset-password", {
         method: "POST",
         body: { token, new_password: newPassword },
     });
 }
 
 export async function verifyResetToken(token: string) {
-    return requestJson<{ valid?: boolean; message?: string }>(`/auth/reset-password/${token}`);
+    return requestJson<{ message?: string; user_id?: string; detail?: string }>(`/auth/reset-password/${token}`);
 }
 
 // ============================================================================
@@ -332,16 +332,40 @@ export async function getDocumentStatus(docId: number, token: string) {
 // ADMIN APIs
 // ============================================================================
 
+// Admin types matching backend schemas
+interface UsageStats {
+    endpoint: string;
+    total_calls: number;
+    total_tokens: number;
+    avg_latency: number;
+}
+
+interface SystemStats {
+    total_users: number;
+    total_documents: number;
+    total_chats: number;
+    total_api_calls: number;
+    users_last_24h?: number;
+    documents_last_24h?: number;
+}
+
+interface AdminStats {
+    users: number;
+    documents: number;
+    chats: number;
+    usage_today: number;
+}
+
 export async function getAdminUsers(token: string) {
     return requestJson<Record<string, unknown>[]>("/admin/users", { token });
 }
 
 export async function getAdminUsageStats(token: string) {
-    return requestJson<Record<string, unknown>>("/admin/usage-stats", { token });
+    return requestJson<UsageStats[]>("/admin/usage-stats", { token });
 }
 
 export async function getAdminSystemStats(token: string) {
-    return requestJson<Record<string, unknown>>("/admin/system-stats", { token });
+    return requestJson<SystemStats>("/admin/system-stats", { token });
 }
 
 export async function getAdminUserUsage(userId: number, token: string) {
@@ -357,7 +381,7 @@ export async function getAdminChats(token: string) {
 }
 
 export async function getAdminStats(token: string) {
-    return requestJson<Record<string, unknown>>("/admin/stats", { token });
+    return requestJson<AdminStats>("/admin/stats", { token });
 }
 
 export async function getAdminConversationDebug(conversationId: number, token: string) {

@@ -9,10 +9,26 @@ import {
   getAdminSystemStats,
 } from "@/lib/api";
 
+interface AdminStats {
+  users: number;
+  documents: number;
+  chats: number;
+  usage_today: number;
+}
+
+interface SystemStats {
+  total_users?: number;
+  total_documents?: number;
+  total_chats?: number;
+  total_api_calls?: number;
+  users_last_24h?: number;
+  documents_last_24h?: number;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
-  const [stats, setStats] = useState<Record<string, number | undefined> | null>(null);
-  const [systemStats, setSystemStats] = useState<Record<string, number | undefined> | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +45,7 @@ export default function AdminDashboard() {
         const [statsData, systemData] = await Promise.all([
           getAdminStats(token),
           getAdminSystemStats(token),
-        ]) as [Record<string, number | undefined>, Record<string, number | undefined>];
+        ]);
         setStats(statsData);
         setSystemStats(systemData);
       } catch (err) {
@@ -77,7 +93,7 @@ export default function AdminDashboard() {
                   const [statsData, systemData] = await Promise.all([
                     getAdminStats(token),
                     getAdminSystemStats(token),
-                  ]) as [Record<string, number | undefined>, Record<string, number | undefined>];
+                  ]);
                   setStats(statsData);
                   setSystemStats(systemData);
                 } catch (retryErr) {

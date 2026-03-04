@@ -6,10 +6,26 @@ import Link from "next/link";
 import { getAdminUsageStats, getAdminSystemStats } from "@/lib/api";
 import { getStoredToken } from "@/lib/auth";
 
+interface UsageStats {
+  endpoint: string;
+  total_calls: number;
+  total_tokens: number;
+  avg_latency: number;
+}
+
+interface SystemStats {
+  total_users?: number;
+  total_documents?: number;
+  total_chats?: number;
+  total_api_calls?: number;
+  users_last_24h?: number;
+  documents_last_24h?: number;
+}
+
 export default function AdminAnalyticsPage() {
   const router = useRouter();
-  const [usageStats, setUsageStats] = useState<Array<Record<string, unknown>>>([]);
-  const [systemStats, setSystemStats] = useState<Record<string, number | undefined> | null>(null);
+  const [usageStats, setUsageStats] = useState<UsageStats[]>([]);
+  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +42,7 @@ export default function AdminAnalyticsPage() {
         const [usage, system] = await Promise.all([
           getAdminUsageStats(token),
           getAdminSystemStats(token),
-        ]) as [Array<Record<string, unknown>>, Record<string, number | undefined>];
+        ]);
         setUsageStats(usage || []);
         setSystemStats(system);
       } catch (err) {
@@ -112,10 +128,10 @@ export default function AdminAnalyticsPage() {
                     <tbody className="divide-y divide-gray-700">
                       {usageStats.map((stat, idx) => (
                         <tr key={idx} className="hover:bg-gray-700 transition">
-                          <td className="px-4 py-2 font-mono text-blue-300">{String(stat.endpoint ?? "-")}</td>
-                          <td className="px-4 py-2 text-center">{String(stat.total_calls ?? 0)}</td>
-                          <td className="px-4 py-2 text-center">{String(stat.total_tokens ?? 0)}</td>
-                          <td className="px-4 py-2 text-center">{((stat.avg_latency as number | undefined) ?? 0).toFixed(2)}</td>
+                          <td className="px-4 py-2 font-mono text-blue-300">{stat.endpoint}</td>
+                          <td className="px-4 py-2 text-center">{stat.total_calls}</td>
+                          <td className="px-4 py-2 text-center">{stat.total_tokens}</td>
+                          <td className="px-4 py-2 text-center">{stat.avg_latency.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
