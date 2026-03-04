@@ -6,8 +6,14 @@ import { getApiBase } from "@/lib/runtimeEnv";
 
 const API_BASE = getApiBase();
 
+interface ChatHistoryItem {
+  message: string;
+  response: string;
+  timestamp: string;
+}
+
 export default function ChatHistoryPage() {
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<ChatHistoryItem[]>([]);
 
   const formatTimestamp = (value: string) => {
     const date = new Date(value);

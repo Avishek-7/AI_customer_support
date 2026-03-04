@@ -10,7 +10,6 @@ export default function Page() {
   useEffect(() => {
     const token = getStoredToken();
     if (token) {
-      setIsAuthenticated(true);
       // Redirect to chat if already logged in
       window.location.href = "/chat";
     }

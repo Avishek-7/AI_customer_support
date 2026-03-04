@@ -9,20 +9,17 @@ export default function Navigation() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const token = getStoredToken();
-    const apiBase = getApiBase();
-    if (!token || !apiBase) {
-      setIsAdmin(false);
-      return;
-    }
+    const fetchAdminStatus = async () => {
+      const token = getStoredToken();
+      const apiBase = getApiBase();
+      if (!token || !apiBase) {
+        setIsAdmin(false);
+        return;
+      }
 
-    const controller = new AbortController();
-
-    (async () => {
       try {
         const response = await fetch(`${apiBase}/users/me`, {
           headers: getAuthHeaders(token),
-          signal: controller.signal,
         });
         if (!response.ok) {
           setIsAdmin(false);
@@ -33,9 +30,9 @@ export default function Navigation() {
       } catch {
         setIsAdmin(false);
       }
-    })();
+    };
 
-    return () => controller.abort();
+    fetchAdminStatus();
   }, []);
 
   return (
