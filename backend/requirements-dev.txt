@@ -1,0 +1,4 @@
+# Development-only dependencies
+pytest>=7.0.0
+rich>=13.0.0
+aiosqlite                # Async SQLite driver for test DATABASE_URL default

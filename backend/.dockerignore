@@ -1,0 +1,73 @@
+# Virtual environment
+.venv/
+venv/
+env/
+.env*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+/.venv/lib/
+/.venv/lib64/
+/venv/lib/
+/venv/lib64/
+/env/lib/
+/env/lib64/
+parts/
+sdist/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Database files
+*.db
+*.sqlite3
+
+# Migration cache (keep scripts, ignore cache)
+migrations/__pycache__/
+
+# Misc
+*.md
+!README.md

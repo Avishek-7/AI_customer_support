@@ -1,2 +1,62 @@
-.env*
-.venv*
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+coverage/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing & Coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# FAISS data (large binary files)
+ai_engine/data/faiss_index.bin
+
+# Docker (local overrides only - keep main compose file tracked)
+docker-compose.override.yml
+
+# Misc
+*.pem
+*.bak
+tsconfig.tsbuildinfo
+pip-wheel-metadata/

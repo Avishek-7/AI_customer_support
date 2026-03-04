@@ -8,6 +8,8 @@ class Document(Base):
     title = Column(String, index=True)
     content = Column(String)
     owner_id = Column(Integer, ForeignKey("users.id"))
-    owner = relationship("User", back_populates="documents")
+    index_status = Column(String, default="pending")
+    chunk_count = Column(Integer, default=0)
     
+    owner = relationship("User", back_populates="documents")
 

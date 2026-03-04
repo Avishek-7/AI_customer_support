@@ -1,34 +1,33 @@
 # === Backend (FastAPI) ===
-fastapi
-uvicorn[standard]
+fastapi==0.115.2
+uvicorn[standard]==0.30.6
+httpx==0.27.2            # Async HTTP client
 
 # === Database (PostgreSQL + ORM) ===
 sqlalchemy
-psycopg[binary]          # PostgreSQL driver
+psycopg[binary]          # PostgreSQL driver (sync fallback)
+asyncpg                  # Async PostgreSQL driver
 sqlmodel
 alembic                  # DB migrations
 
 # === Auth & Security ===
 python-jose[cryptography]
-passlib[bcrypt]
+bcrypt
 python-multipart         # For file uploads
 
 # === Environment Variables ===
 pydantic
 pydantic-settings
-
-# === AI / RAG Engine ===
-sentence-transformers
-faiss-cpu                # Vector database
-numpy                    # Required for FAISS
-scikit-learn             # Optional but used for preprocessing
-
-# === Optional LLM Integration ===
-langchain
-langchain-core
-langchain-community
-langchain-text-splitters
+email_validator           # Required for EmailStr validation in Pydantic v2
 
 # === Utility ===
 python-dotenv
-requests
+requests==2.32.3
+pymupdf                   # PDF handling
+redis                     # Rate limiting
+numpy                     # Required for some utilities
+prometheus-client         # Metrics
+tiktoken                  # Model token counting
+
+# === Logging ===
+structlog>=24.1.0         # Structured logging

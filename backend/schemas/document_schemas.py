@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 class DocumentBase(BaseModel):
     title: str
@@ -12,9 +12,11 @@ class DocumentUpload(BaseModel):
 class DocumentResponse(DocumentBase):
     id: int
     owner_id: int
+    index_status: str = "pending"
+    chunk_count: int = 0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DocumentListResponse(BaseModel):
     documents: List[DocumentResponse]
@@ -37,6 +39,11 @@ class DocumentSearchRequest(BaseModel):
 
 class DocumentSearchResponse(BaseModel):
     documents: List[DocumentResponse]
+
+class DocumentStatusUpdateRequest(BaseModel):
+    document_id: int
+    status: Literal["pending", "processing", "indexing", "completed", "failed", "indexed"]
+    chunk_count: Optional[int] = None
 
 
 

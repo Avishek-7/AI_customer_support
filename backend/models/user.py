@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy.orm import relationship
 from core.database import Base
 
 class User(Base):
@@ -8,4 +9,12 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    role = Column(String, default="user")  # user | admin
+    reset_token = Column(String, nullable=True)
+    reset_token_expires_at = Column(DateTime, nullable=True)
+    reset_token_used = Column(Boolean, default=False)
+    
+    documents = relationship("Document", back_populates="owner", cascade="all, delete-orphan")
+    chat_history = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     
