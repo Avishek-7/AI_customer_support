@@ -16,8 +16,9 @@ bcrypt
 python-multipart         # For file uploads
 
 # === Environment Variables ===
-pydantic[email]
+pydantic
 pydantic-settings
+email_validator           # Required for EmailStr validation in Pydantic v2
 
 # === Utility ===
 python-dotenv
