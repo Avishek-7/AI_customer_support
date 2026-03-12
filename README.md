@@ -1,1280 +1,208 @@
-<div align="center">
+# AI Customer Support
 
-# 🤖 AI Customer Support
+An AI-powered support platform built with Next.js, FastAPI, PostgreSQL, Redis, and a separate RAG AI engine.
 
-**An intelligent, full-stack customer support platform powered by RAG and Google Gemini**
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white)](https://redis.io)
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
-[![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+## Start Here
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Architecture](#️-architecture) • [API Reference](#-api-endpoints) • [Contributing](#-contributing)
+- Setup guide: `QUICK_START.md`
+- Backend API reference: `docs/backend-api.md`
+- AI engine API reference: `docs/ai-engine-api.md`
+- Current product spec: `docs/conversation-investigator-v1-spec.md`
+- Archived engineering notes: `docs/archive/`
 
----
+## What This Project Does
 
-</div>
+This repository provides a full-stack customer support system with:
 
-## 📸 Screenshots
+- A Next.js frontend for chat, document management, user profile, and admin tooling.
+- A FastAPI backend for authentication, chat persistence, admin endpoints, and document workflows.
+- A separate AI engine for retrieval-augmented generation, critique, hallucination analysis, and answer regeneration.
 
-<div align="center">
+## Core Features
 
-| Chat Interface | Document Upload | Conversation History |
-|:-:|:-:|:-:|
-| ![Chat](docs/screenshots/chat.png) | ![Upload](docs/screenshots/upload.png) | ![History](docs/screenshots/history.png) |
+- RAG-based chat grounded in uploaded documents.
+- Streaming responses with source citations.
+- Document upload, indexing, search, edit, reindex, and deletion workflows.
+- JWT authentication and role-based access.
+- Conversation history with multi-conversation support.
+- Admin dashboard for users, analytics, documents, chats, debug tools, and investigations.
+- Quality tooling including confidence scoring, hallucination detection, critique, and constrained regeneration.
 
-</div>
+## Architecture
 
-> 
+```text
+Frontend (Next.js, port 3000)
+  -> Backend (FastAPI, port 8000)
+    -> AI Engine (RAG service, port 9000)
 
----
-
-A full-stack AI-powered customer support application with a Next.js frontend, a FastAPI backend, and an AI engine for RAG-based document querying. Upload PDFs, ask questions, and get AI-powered answers with source citations.
-
-## ✨ Features
-
-> 🎯 **Built for production** — Async database operations, background task processing, and streaming responses for a smooth user experience.
-
-<details>
-<summary><b>🤖 AI-Powered Chat</b> (click to expand)</summary>
-
-- **RAG (Retrieval-Augmented Generation)** - Answers grounded in your uploaded documents
-- **Streaming responses** - Real-time token-by-token AI responses
-- **Source citations** - See which documents and chunks were used for each answer
-- **Chat history** - Session-based conversation memory for contextual follow-ups
-- **Google Gemini LLM** - Powered by `gemini-2.5-flash` model
-- **MMR Reranking** - Maximal Marginal Relevance for diverse, non-redundant results
-- **Confidence Scoring** - Quality metrics for each answer
-- **Hallucination Detection** - Automatic source-answer alignment checking
-- **Answer Postprocessing** - Removes duplicates and cleans formatting
-
-</details>
-
-<details>
-<summary><b>📄 Document Management</b> (click to expand)</summary>
-
-- **PDF upload** - Drag & drop or browse to upload PDF documents
-- **Floating upload modal** - Upload without leaving the chat page
-- **Document selection** - Choose which documents to query (or use all)
-- **Bulk delete** - Select and delete multiple documents at once
-- **Auto-indexing** - Documents are automatically chunked, embedded, and indexed
-- **Document search** - Full-text search within uploaded documents
-- **Document edit** - Update document title and content
-- **Reindex functionality** - Regenerate embeddings for documents
-
-</details>
-
-<details>
-<summary><b>🔐 Authentication & User Management</b> (click to expand)</summary>
-
-- **JWT-based auth** - Secure token authentication
-- **User registration & login** - Full auth flow with password hashing
-- **Protected routes** - Chat and documents require authentication
-- **Password recovery** - Forgot password flow with email verification
-- **Password reset** - Reset password with secure token verification
-- **User profile** - View and edit user information
-- **Profile management** - Update name, email, and password
-- **Role-based access** - Admin and user roles with different permissions
-
-</details>
-
-<details>
-<summary><b>💬 Conversation Management</b> (click to expand)</summary>
-
-- **Multiple conversations** - Create and manage multiple chat conversations
-- **Conversation history** - View all past conversations with timestamps
-- **Rename conversations** - Update conversation titles
-- **Delete conversations** - Remove conversations with confirmation
-- **Load conversation** - Retrieve full conversation history
-- **Message persistence** - All messages saved with conversation context
-
-</details>
-
-<details>
-<summary><b>🎨 Modern UI & UX</b> (click to expand)</summary>
-
-- **Dark theme** - Sleek dark mode interface
-- **Responsive design** - Works on desktop and mobile
-- **Real-time typing indicator** - "AI is thinking..." with animated dots
-- **Markdown support** - AI responses render with proper formatting
-- **Syntax highlighting** - Code blocks with language-specific highlighting
-- **Global navigation** - Easy access to profile, documents, and admin panel
-- **Sidebar navigation** - Quick access to conversations and documents
-- **Loading states** - Visual feedback during data loading
-
-</details>
-
-<details>
-<summary><b>🛡️ Admin Dashboard</b> (click to expand)</summary>
-
-- **Admin statistics** - KPI cards showing users, documents, chats, API calls
-- **User management** - Create, view, and delete users
-- **User analytics** - Per-user statistics and activity tracking
-- **Analytics dashboard** - System-wide usage statistics and trends
-- **Document monitoring** - View all documents across users with status
-- **Chat activity** - Monitor recent chat activities
-- **Conversation debugger** - Debug conversations with RAG pipeline details
-- **Role assignment** - Assign admin/user roles to accounts
-
-</details>
-
-<details>
-<summary><b>🔍 Debugging & Monitoring</b> (click to expand)</summary>
-
-- **Conversation debugging** - Deep inspection of RAG pipeline
-- **Chunk retrieval tracking** - See which chunks were retrieved for each query
-- **Confidence scores** - View AI confidence metrics for answers
-- **Hallucination detection** - See hallucination risk scores
-- **Alignment scoring** - Track source-answer alignment metrics
-- **Prompt inspection** - View prompt length and content metrics
-- **Query tracking** - Monitor all user queries and responses
-
-</details>
-
-<details>
-<summary><b>🎯 Advanced Quality Features</b> (click to expand)</summary>
-
-- **Self-Critique** - LLM judges its own answers for accuracy and quality
-- **Context Inspection** - Debug and verify retrieved chunks before answering
-- **Answer Regeneration** - Regenerate answers with user-specified constraints
-- **Hallucination Detection** - Embedding-based alignment scoring (0-1 scale)
-- **Risk Assessment** - Low/Medium/High hallucination risk levels
-
-</details>
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Frontend  │────▶│   Backend   │────▶│  AI Engine  │
-│  (Next.js)  │     │  (FastAPI)  │     │    (RAG)    │
-│  Port 3000  │     │  Port 8000  │     │  Port 9000  │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                           │
-           ┌───────────────┴───────────────┐
-           │                               │
-           ▼                               ▼
-    ┌─────────────┐                 ┌─────────────┐
-    │ PostgreSQL  │                 │    Redis    │
-    │  Database   │                 │    Cache    │
-    │  Port 5432  │                 │  Port 6379  │
-    └─────────────┘                 └─────────────┘
+Supporting infrastructure:
+- PostgreSQL for users, documents, conversations, chat history, and audit data
+- Redis for caching and rate limiting
+- FAISS for vector search
 ```
 
-### 💬 Chat Request Flow
+### Main request flow
 
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│   User   │    │ Frontend │    │ Backend  │    │AI Engine │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │               │
-     │  Send Message │               │               │
-     │──────────────▶│               │               │
-     │               │  POST /stream │               │
-     │               │──────────────▶│               │
-     │               │               │ POST /stream  │
-     │               │               │──────────────▶│
-     │               │               │               │
-     │               │               │   ┌───────────┴───────────┐
-     │               │               │   │  1. Embed query       │
-     │               │               │   │  2. FAISS search      │
-     │               │               │   │  3. MMR reranking     │
-     │               │               │   │  4. LLM generation    │
-     │               │               │   └───────────┬───────────┘
-     │               │               │               │
-     │               │               │◀─ SSE tokens ─│
-     │               │◀─ SSE tokens ─│               │
-     │◀─ Live typing─│               │               │
-     │               │               │               │
-     │               │               │──┐            │
-     │               │               │  │ Save to DB │
-     │               │               │◀─┘ (Background)
-     │               │               │               │
-     ▼               ▼               ▼               ▼
-```
+1. User sends a message from the frontend.
+2. Backend authenticates the user and forwards the request to the AI engine.
+3. AI engine embeds the query, retrieves chunks from FAISS, reranks results, and calls Gemini.
+4. Backend streams the answer back to the client and persists conversation history.
 
-### 📄 Document Processing Pipeline
+### Main document flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        DOCUMENT UPLOAD FLOW                             │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  ┌─────────┐      ┌─────────────┐      ┌─────────────┐      ┌──────────┐
-  │  User   │      │   Backend   │      │ Background  │      │AI Engine │
-  │ Upload  │─────▶│  Save Meta  │─────▶│    Task     │─────▶│  Index   │
-  │  PDF    │      │  to DB      │      │  (Async)    │      │ Document │
-  └─────────┘      └─────────────┘      └─────────────┘      └──────────┘
-                                                                   │
-                                                                   ▼
-                   ┌─────────────────────────────────────────────────────┐
-                   │              AI ENGINE PROCESSING                   │
-                   ├─────────────────────────────────────────────────────┤
-                   │                                                     │
-                   │  ┌──────────┐   ┌──────────┐   ┌──────────────────┐│
-                   │  │  Parse   │   │  Chunk   │   │     Embed        ││
-                   │  │   PDF    │──▶│  Text    │──▶│   (MiniLM-L6)    ││
-                   │  │ (PyMuPDF)│   │(LangChain)│  │                  ││
-                   │  └──────────┘   └──────────┘   └────────┬─────────┘│
-                   │                                          │         │
-                   │                                          ▼         │
-                   │                               ┌──────────────────┐ │
-                   │                               │   Store in FAISS │ │
-                   │                               │   Vector Index   │ │
-                   │                               └──────────────────┘ │
-                   └─────────────────────────────────────────────────────┘
-```
-
-### 🤖 RAG Pipeline (AI Engine)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     RETRIEVAL-AUGMENTED GENERATION                      │
-└─────────────────────────────────────────────────────────────────────────┘
-
-     User Query
-         │
-         ▼
-  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-  │   Embed     │     │   FAISS     │     │     MMR     │
-  │   Query     │────▶│   Search    │────▶│  Reranking  │
-  │ (MiniLM-L6) │     │  (top-20)   │     │   (top-5)   │
-  └─────────────┘     └─────────────┘     └─────────────┘
-                                                 │
-                                                 ▼
-                                    ┌────────────────────────┐
-                                    │   Retrieved Chunks     │
-                                    │ ┌────┐ ┌────┐ ┌────┐  │
-                                    │ │ C1 │ │ C2 │ │ C3 │  │
-                                    │ └────┘ └────┘ └────┘  │
-                                    └───────────┬────────────┘
-                                                │
-         ┌──────────────────────────────────────┴──────────────────────┐
-         │                                                             │
-         ▼                                                             ▼
-  ┌─────────────┐                                              ┌─────────────┐
-  │   Prompt    │                                              │   Memory    │
-  │  Template   │                                              │   (Chat     │
-  │ + Context   │                                              │   History)  │
-  └──────┬──────┘                                              └──────┬──────┘
-         │                                                             │
-         └─────────────────────────┬───────────────────────────────────┘
-                                   │
-                                   ▼
-                          ┌─────────────────┐
-                          │  Google Gemini  │
-                          │   (LLM Call)    │
-                          │ gemini-2.5-flash│
-                          └────────┬────────┘
-                                   │
-         ┌─────────────────────────┼─────────────────────────┐
-         │                         │                         │
-         ▼                         ▼                         ▼
-  ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-  │ Confidence  │         │Hallucination│         │    Post     │
-  │   Score     │         │  Detection  │         │  Processing │
-  └─────────────┘         └─────────────┘         └─────────────┘
-                                   │
-                                   ▼
-                          ┌─────────────────┐
-                          │  Final Answer   │
-                          │  + Sources +    │
-                          │  Quality Scores │
-                          └─────────────────┘
-```
-
-### 🔐 Authentication Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         AUTHENTICATION FLOW                             │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  REGISTER                              LOGIN
-  ────────                              ─────
-      │                                    │
-      ▼                                    ▼
-┌───────────┐                        ┌───────────┐
-│  Frontend │                        │  Frontend │
-│  /register│                        │  /login   │
-└─────┬─────┘                        └─────┬─────┘
-      │                                    │
-      │ POST /auth/register                │ POST /auth/login
-      ▼                                    ▼
-┌───────────────────┐              ┌───────────────────┐
-│     Backend       │              │     Backend       │
-├───────────────────┤              ├───────────────────┤
-│ 1. Validate input │              │ 1. Find user      │
-│ 2. Hash password  │              │ 2. Verify password│
-│    (bcrypt)       │              │ 3. Generate JWT   │
-│ 3. Save to DB     │              │                   │
-└─────────┬─────────┘              └─────────┬─────────┘
-          │                                  │
-          ▼                                  ▼
-   ┌─────────────┐                    ┌─────────────┐
-   │   Success   │                    │ JWT Token   │
-   │   Message   │                    │  Returned   │
-   └─────────────┘                    └──────┬──────┘
-                                             │
-                                             ▼
-                                    ┌─────────────────┐
-                                    │  Store in       │
-                                    │  localStorage   │
-                                    └─────────────────┘
-
-  PROTECTED REQUEST
-  ─────────────────
-      │
-      ▼
-┌───────────────────────────────────────────────┐
-│  Request with Authorization: Bearer <token>  │
-└───────────────────────────────────────────────┘
-      │
-      ▼
-┌───────────────────┐     ┌───────────────────┐
-│  Verify JWT       │────▶│  Get Current User │
-│  (python-jose)    │     │  from Database    │
-└───────────────────┘     └─────────┬─────────┘
-                                    │
-                                    ▼
-                          ┌───────────────────┐
-                          │  Process Request  │
-                          │  (chat, docs...)  │
-                          └───────────────────┘
-```
-
-### 🗄️ Database Schema
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATABASE RELATIONSHIPS                          │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────┐       ┌──────────────────────┐
-│        users         │       │     conversations    │
-├──────────────────────┤       ├──────────────────────┤
-│ id (PK)              │───┐   │ id (PK)              │
-│ email                │   │   │ user_id (FK)    ─────┼───┐
-│ hashed_password      │   │   │ title                │   │
-│ role                 │   │   │ created_at           │   │
-│ created_at           │   │   │ updated_at           │   │
-└──────────────────────┘   │   └──────────────────────┘   │
-           │               │              │               │
-           │               │              │               │
-           │               │              ▼               │
-           │               │   ┌──────────────────────┐   │
-           │               │   │    chat_history      │   │
-           │               │   ├──────────────────────┤   │
-           │               └──▶│ id (PK)              │   │
-           │                   │ conversation_id (FK) │◀──┘
-           │                   │ user_id (FK)    ─────┼───┐
-           │                   │ role (user/assistant)│   │
-           │                   │ content              │   │
-           │                   │ created_at           │   │
-           │                   └──────────────────────┘   │
-           │                                              │
-           │               ┌──────────────────────────────┘
-           │               │
-           ▼               ▼
-┌──────────────────────┐
-│      documents       │
-├──────────────────────┤
-│ id (PK)              │
-│ owner_id (FK)   ─────┼───▶ users.id
-│ title                │
-│ filename             │
-│ file_path            │
-│ status               │
-│ created_at           │
-└──────────────────────┘
-
-Legend: (PK) = Primary Key, (FK) = Foreign Key
-```
+1. User uploads a document.
+2. Backend stores metadata and triggers indexing work.
+3. AI engine parses, chunks, embeds, and indexes the document.
+4. Indexed content becomes available for retrieval during chat.
 
 ## Project Structure
 
-```
-ai-customer-support/
-├── frontend/          # Next.js 15 app (TypeScript, Tailwind CSS)
-│   ├── app/           # App router pages (chat, login, register, documents)
-│   └── components/    # Reusable components (ChatBubble, UploadModal, etc.)
-├── backend/           # FastAPI service (Python)
-│   ├── api/           # Route handlers (auth, chat, documents)
-│   ├── core/          # Config, database, security
-│   ├── jobs/          # Background tasks (FastAPI BackgroundTasks)
-│   ├── models/        # SQLAlchemy models
-│   └── schemas/       # Pydantic schemas
-└── ai_engine/         # RAG pipeline (Python)
-    ├── embeddings/    # Sentence transformer embeddings
-    ├── llm/           # Gemini LLM integration, prompts, critique & regeneration
-    ├── rag/           # Chunking & pipeline orchestration
-    ├── retriever/     # FAISS retriever & MMR reranking
-    ├── vectorstore/   # FAISS index management
-    └── utils/         # Confidence, hallucination detection, postprocessing
+```text
+frontend/   Next.js application
+backend/    FastAPI application
+ai_engine/  RAG pipeline and LLM service
+docs/       API docs, product specs, archived notes
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
+
 - Python 3.10+
 - Node.js 18+
 - PostgreSQL
-- Redis (optional, for rate limiting)
-- Google API Key (for Gemini)
+- Redis optional for rate limiting and caching
+- Google API key for Gemini
 
-### 1. Database Setup
-```bash
-# Create PostgreSQL database
-createdb ai_support
+### Backend Setup
 
-# Or with user/password
-psql -c "CREATE DATABASE ai_support;"
-psql -c "CREATE USER ai_user WITH PASSWORD 'your_password';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE ai_support TO ai_user;"
-```
-
-### 2. Backend Setup
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Create .env file
-cat > .env << EOF
-JWT_SECRET_KEY=your-super-secret-key-change-this
-DATABASE_URL=postgresql+asyncpg://ai_user:your_password@localhost:5432/ai_support
-AI_ENGINE_URL=http://localhost:9000
-REDIS_URL=redis://localhost:6379/0
-EOF
-
-# Run the server
 uvicorn main:app --reload --port 8000
 ```
 
-### 3. AI Engine Setup
+Required backend environment variables include:
+
+- `JWT_SECRET_KEY`
+- `DATABASE_URL`
+- `AI_ENGINE_URL`
+
+### AI Engine Setup
+
 ```bash
 cd ai_engine
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Create .env file
-cat > .env << EOF
-GOOGLE_API_KEY=your-gemini-api-key
-BACKEND_URL=http://localhost:8000
-EOF
-
-# Run the server
 uvicorn app:app --reload --port 9000
 ```
 
-### 4. Frontend Setup
+Required AI engine environment variables include:
+
+- `GOOGLE_API_KEY`
+- `BACKEND_URL`
+
+### Frontend
+
 ```bash
 cd frontend
 npm install
-
-# Run the dev server
-npm run dev
-
-# Build for production
-npm run build
-npm start
-```
-
-**Frontend Features:**
-- ✅ User authentication (login, register, password recovery)
-- ✅ Chat interface with conversation management
-- ✅ Document upload and management
-- ✅ User profile management
-- ✅ Admin dashboard with statistics
-- ✅ User management interface
-- ✅ Analytics and monitoring
-- ✅ Conversation debugging tools
-- ✅ Real-time streaming responses
-
-### 5. Access the App
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000/docs
-- AI Engine API: http://localhost:9000/docs
-
-## 📝 Environment Variables
-
-### Backend `.env`
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `JWT_SECRET_KEY` | Secret key for JWT signing | ✅ |
-| `DATABASE_URL` | PostgreSQL connection string (asyncpg) | ✅ |
-| `AI_ENGINE_URL` | AI engine service URL | ✅ (default: `http://localhost:9000`) |
-| `JWT_ALGORITHM` | JWT algorithm | ❌ (default: `HS256`) |
-| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry | ❌ (default: `1440`) |
-| `REDIS_URL` | Redis connection URL (for rate limiting) | ❌ (default: `redis://localhost:6379/0`) |
-
-### AI Engine `.env`
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GOOGLE_API_KEY` | Google Gemini API key | ✅ |
-| `BACKEND_URL` | Backend service URL | ❌ (default: `http://localhost:8000`) |
-
-## 🔌 API Endpoints
-
-### Backend (Port 8000)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/register` | Register new user |
-| POST | `/auth/login` | Login and get JWT token |
-| GET | `/documents/` | List user's documents |
-| POST | `/documents/upload` | Upload PDF document |
-| DELETE | `/documents/{id}` | Delete a document |
-| POST | `/chat/stream` | Stream chat response (SSE) |
-
-### AI Engine (Port 9000)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Health check |
-| POST | `/index-document` | Index document for RAG |
-| POST | `/query` | Query documents (non-streaming) |
-| POST | `/stream` | Query documents (streaming) |
-| PUT | `/update-document` | Re-index updated document |
-| DELETE | `/delete-document/{id}` | Remove document from index |
-| POST | `/inspect-context` | View retrieved chunks without generating answer |
-| POST | `/critique` | LLM self-critique of answer quality |
-| POST | `/regenerate` | Regenerate answer with constraints |
-
-## 🛠️ Tech Stack
-
-### Frontend
-- **Next.js 15** - React framework with App Router
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first styling
-- **React Markdown** - Markdown rendering
-- **React Syntax Highlighter** - Code highlighting
-
-### Backend
-- **FastAPI** - High-performance Python API
-- **SQLAlchemy** - Async ORM for PostgreSQL
-- **Pydantic** - Data validation
-- **bcrypt** - Password hashing
-- **python-jose** - JWT handling
-- **httpx** - Async HTTP client
-- **Redis** - Caching and rate limiting
-
-### AI Engine
-- **Google Gemini** - LLM (gemini-2.5-flash)
-- **Sentence Transformers** - Text embeddings (all-MiniLM-L6-v2)
-- **FAISS** - Vector similarity search
-- **LangChain** - Text chunking & chat memory
-- **PyMuPDF** - PDF text extraction
-- **scikit-learn** - Cosine similarity & MMR reranking
-- **NumPy** - Vector operations for hallucination detection
-
-## 📁 Data Storage
-
-- **PostgreSQL** - Users, documents, chat history, conversations
-- **Redis** - Session caching, rate limiting counters
-- **FAISS Index** - Vector embeddings stored in `ai_engine/data/`
-  - `faiss_index.bin` - Vector index
-  - `metadata.json` - Chunk metadata (text, document_id, title)
-
-## 🔒 Security Notes
-
-- Passwords hashed with bcrypt (12 rounds)
-- JWT tokens expire after 24 hours by default
-- All document endpoints require authentication
-- CORS configured for development (update for production)
-
-## 🧪 Development Tips
-
-> ⚡ **Pro Tip:** Run all three services in separate terminal tabs for the best development experience.
-
-- Use `develop` branch for active work; PR into `main`
-- Backend auto-reloads with `--reload` flag
-- AI Engine auto-reloads with `--reload` flag
-- Frontend has hot module replacement built-in
-- Check browser console and terminal for errors
-
----
-
-## 🗺️ Roadmap
-
-| Status | Feature |
-|:------:|:--------|
-| ✅ | RAG-based document querying |
-| ✅ | Streaming chat responses |
-| ✅ | JWT authentication |
-| ✅ | Background tasks |
-| ✅ | Conversation management |
-| ✅ | Docker Compose setup |
-| 🚧 | Multi-language support |
-| ✅ | Admin dashboard |
-| 📋 | Kubernetes deployment |
-| 📋 | OAuth (Google, GitHub) |
-| 📋 | File type support (DOCX, TXT) |
-| 📋 | Analytics & usage metrics |
-
-**Legend:** ✅ Complete | 🚧 In Progress | 📋 Planned
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
-
-> 📝 Please read our contributing guidelines before submitting a PR.
-
----
-
-## 💬 Support
-
-Having issues? Here's how to get help:
-
-- 🐛 **Bug Reports:** [Open an issue](../../issues/new?template=bug_report.md)
-- 💡 **Feature Requests:** [Open an issue](../../issues/new?template=feature_request.md)
-- 💬 **Discussions:** [Start a discussion](../../discussions)
-
----
-
-## 🙏 Acknowledgments
-
-- [Google Gemini](https://ai.google.dev) - LLM provider
-- [LangChain](https://langchain.com) - RAG framework components
-- [FAISS](https://github.com/facebookresearch/faiss) - Vector similarity search
-- [Sentence Transformers](https://sbert.net) - Text embeddings
-- [FastAPI](https://fastapi.tiangolo.com) - Backend framework
-- [Next.js](https://nextjs.org) - Frontend framework
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-**⭐ Star this repo if you find it helpful!**
-
-Made with ❤️ by [Avishek](https://github.com/avishek)
-
-</div>
-
-[Features](#-features) • [Quick Start](#-quick-start) • [Architecture](#️-architecture) • [API Reference](#-api-endpoints) • [Contributing](#-contributing)
-
----
-
-</div>
-
-## 📸 Screenshots
-
-<div align="center">
-
-| Chat Interface | Document Upload | Conversation History |
-|:-:|:-:|:-:|
-| ![Chat](docs/screenshots/chat.png) | ![Upload](docs/screenshots/upload.png) | ![History](docs/screenshots/history.png) |
-
-</div>
-
-> 💡 **Note:** Add your screenshots to `docs/screenshots/` folder
-
----
-
-A full-stack AI-powered customer support application with a Next.js frontend, a FastAPI backend, and an AI engine for RAG-based document querying. Upload PDFs, ask questions, and get AI-powered answers with source citations.
-
-## ✨ Features
-
-> 🎯 **Built for production** — Async database operations, background task processing, and streaming responses for a smooth user experience.
-
-<details>
-<summary><b>🤖 AI-Powered Chat</b> (click to expand)</summary>
-
-- **RAG (Retrieval-Augmented Generation)** - Answers grounded in your uploaded documents
-- **Streaming responses** - Real-time token-by-token AI responses
-- **Source citations** - See which documents and chunks were used for each answer
-- **Chat history** - Session-based conversation memory for contextual follow-ups
-- **Google Gemini LLM** - Powered by `gemini-2.5-flash` model
-- **MMR Reranking** - Maximal Marginal Relevance for diverse, non-redundant results
-- **Confidence Scoring** - Quality metrics for each answer
-- **Hallucination Detection** - Automatic source-answer alignment checking
-- **Answer Postprocessing** - Removes duplicates and cleans formatting
-
-</details>
-
-<details>
-<summary><b>📄 Document Management</b> (click to expand)</summary>
-
-- **PDF upload** - Drag & drop or browse to upload PDF documents
-- **Floating upload modal** - Upload without leaving the chat page
-- **Document selection** - Choose which documents to query (or use all)
-- **Bulk delete** - Select and delete multiple documents at once
-- **Auto-indexing** - Documents are automatically chunked, embedded, and indexed
-
-</details>
-
-<details>
-<summary><b>🔐 Authentication</b> (click to expand)</summary>
-
-- **JWT-based auth** - Secure token authentication
-- **User registration & login** - Full auth flow with password hashing
-- **Protected routes** - Chat and documents require authentication
-
-</details>
-
-<details>
-<summary><b>🎨 Modern UI</b> (click to expand)</summary>
-
-- **Dark theme** - Sleek dark mode interface
-- **Responsive design** - Works on desktop and mobile
-- **Real-time typing indicator** - "AI is thinking..." with animated dots
-- **Markdown support** - AI responses render with proper formatting
-- **Syntax highlighting** - Code blocks with language-specific highlighting
-
-</details>
-
-<details>
-<summary><b>🎯 Advanced Quality Features</b> (click to expand)</summary>
-
-- **Self-Critique** - LLM judges its own answers for accuracy and quality
-- **Context Inspection** - Debug and verify retrieved chunks before answering
-- **Answer Regeneration** - Regenerate answers with user-specified constraints
-- **Hallucination Detection** - Embedding-based alignment scoring (0-1 scale)
-- **Risk Assessment** - Low/Medium/High hallucination risk levels
-
-</details>
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Frontend  │────▶│   Backend   │────▶│  AI Engine  │
-│  (Next.js)  │     │  (FastAPI)  │     │    (RAG)    │
-│  Port 3000  │     │  Port 8000  │     │  Port 9000  │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                           │
-           ┌───────────────┼───────────────┐
-           │               │               │
-           ▼               ▼               ▼
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │ PostgreSQL  │ │  RabbitMQ   │ │    Redis    │
-    │  Database   │ │   Broker    │ │    Cache    │
-    │  Port 5432  │ │  Port 5672  │ │  Port 6379  │
-    └─────────────┘ └─────────────┘ └─────────────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-                    │   Celery    │
-                    │   Worker    │
-                    └─────────────┘
-```
-
-### 💬 Chat Request Flow
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│   User   │    │ Frontend │    │ Backend  │    │AI Engine │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │               │
-     │  Send Message │               │               │
-     │──────────────▶│               │               │
-     │               │  POST /stream │               │
-     │               │──────────────▶│               │
-     │               │               │ POST /stream  │
-     │               │               │──────────────▶│
-     │               │               │               │
-     │               │               │   ┌───────────┴───────────┐
-     │               │               │   │  1. Embed query       │
-     │               │               │   │  2. FAISS search      │
-     │               │               │   │  3. MMR reranking     │
-     │               │               │   │  4. LLM generation    │
-     │               │               │   └───────────┬───────────┘
-     │               │               │               │
-     │               │               │◀─ SSE tokens ─│
-     │               │◀─ SSE tokens ─│               │
-     │◀─ Live typing─│               │               │
-     │               │               │               │
-     │               │               │──┐            │
-     │               │               │  │ Save to DB │
-     │               │               │◀─┘ (Background)
-     │               │               │               │
-     ▼               ▼               ▼               ▼
-```
-
-### 📄 Document Processing Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        DOCUMENT UPLOAD FLOW                             │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  ┌─────────┐      ┌─────────────┐      ┌─────────────┐      ┌──────────┐
-  │  User   │      │   Backend   │      │   Celery    │      │AI Engine │
-  │ Upload  │─────▶│  Save Meta  │─────▶│   Worker    │─────▶│  Index   │
-  │  PDF    │      │  to DB      │      │  (Async)    │      │ Document │
-  └─────────┘      └─────────────┘      └─────────────┘      └──────────┘
-                                                                   │
-                                                                   ▼
-                   ┌─────────────────────────────────────────────────────┐
-                   │              AI ENGINE PROCESSING                   │
-                   ├─────────────────────────────────────────────────────┤
-                   │                                                     │
-                   │  ┌──────────┐   ┌──────────┐   ┌──────────────────┐│
-                   │  │  Parse   │   │  Chunk   │   │     Embed        ││
-                   │  │   PDF    │──▶│  Text    │──▶│   (MiniLM-L6)    ││
-                   │  │ (PyMuPDF)│   │(LangChain)│  │                  ││
-                   │  └──────────┘   └──────────┘   └────────┬─────────┘│
-                   │                                          │         │
-                   │                                          ▼         │
-                   │                               ┌──────────────────┐ │
-                   │                               │   Store in FAISS │ │
-                   │                               │   Vector Index   │ │
-                   │                               └──────────────────┘ │
-                   └─────────────────────────────────────────────────────┘
-```
-
-### 🤖 RAG Pipeline (AI Engine)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     RETRIEVAL-AUGMENTED GENERATION                      │
-└─────────────────────────────────────────────────────────────────────────┘
-
-     User Query
-         │
-         ▼
-  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-  │   Embed     │     │   FAISS     │     │     MMR     │
-  │   Query     │────▶│   Search    │────▶│  Reranking  │
-  │ (MiniLM-L6) │     │  (top-20)   │     │   (top-5)   │
-  └─────────────┘     └─────────────┘     └─────────────┘
-                                                 │
-                                                 ▼
-                                    ┌────────────────────────┐
-                                    │   Retrieved Chunks     │
-                                    │ ┌────┐ ┌────┐ ┌────┐  │
-                                    │ │ C1 │ │ C2 │ │ C3 │  │
-                                    │ └────┘ └────┘ └────┘  │
-                                    └───────────┬────────────┘
-                                                │
-         ┌──────────────────────────────────────┴──────────────────────┐
-         │                                                             │
-         ▼                                                             ▼
-  ┌─────────────┐                                              ┌─────────────┐
-  │   Prompt    │                                              │   Memory    │
-  │  Template   │                                              │   (Chat     │
-  │ + Context   │                                              │   History)  │
-  └──────┬──────┘                                              └──────┬──────┘
-         │                                                             │
-         └─────────────────────────┬───────────────────────────────────┘
-                                   │
-                                   ▼
-                          ┌─────────────────┐
-                          │  Google Gemini  │
-                          │   (LLM Call)    │
-                          │ gemini-2.5-flash│
-                          └────────┬────────┘
-                                   │
-         ┌─────────────────────────┼─────────────────────────┐
-         │                         │                         │
-         ▼                         ▼                         ▼
-  ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-  │ Confidence  │         │Hallucination│         │    Post     │
-  │   Score     │         │  Detection  │         │  Processing │
-  └─────────────┘         └─────────────┘         └─────────────┘
-                                   │
-                                   ▼
-                          ┌─────────────────┐
-                          │  Final Answer   │
-                          │  + Sources +    │
-                          │  Quality Scores │
-                          └─────────────────┘
-```
-
-### 🔐 Authentication Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         AUTHENTICATION FLOW                             │
-└─────────────────────────────────────────────────────────────────────────┘
-
-  REGISTER                              LOGIN
-  ────────                              ─────
-      │                                    │
-      ▼                                    ▼
-┌───────────┐                        ┌───────────┐
-│  Frontend │                        │  Frontend │
-│  /register│                        │  /login   │
-└─────┬─────┘                        └─────┬─────┘
-      │                                    │
-      │ POST /auth/register                │ POST /auth/login
-      ▼                                    ▼
-┌───────────────────┐              ┌───────────────────┐
-│     Backend       │              │     Backend       │
-├───────────────────┤              ├───────────────────┤
-│ 1. Validate input │              │ 1. Find user      │
-│ 2. Hash password  │              │ 2. Verify password│
-│    (bcrypt)       │              │ 3. Generate JWT   │
-│ 3. Save to DB     │              │                   │
-└─────────┬─────────┘              └─────────┬─────────┘
-          │                                  │
-          ▼                                  ▼
-   ┌─────────────┐                    ┌─────────────┐
-   │   Success   │                    │ JWT Token   │
-   │   Message   │                    │  Returned   │
-   └─────────────┘                    └──────┬──────┘
-                                             │
-                                             ▼
-                                    ┌─────────────────┐
-                                    │  Store in       │
-                                    │  localStorage   │
-                                    └─────────────────┘
-
-  PROTECTED REQUEST
-  ─────────────────
-      │
-      ▼
-┌───────────────────────────────────────────────┐
-│  Request with Authorization: Bearer <token>  │
-└───────────────────────────────────────────────┘
-      │
-      ▼
-┌───────────────────┐     ┌───────────────────┐
-│  Verify JWT       │────▶│  Get Current User │
-│  (python-jose)    │     │  from Database    │
-└───────────────────┘     └─────────┬─────────┘
-                                    │
-                                    ▼
-                          ┌───────────────────┐
-                          │  Process Request  │
-                          │  (chat, docs...)  │
-                          └───────────────────┘
-```
-
-### 🗄️ Database Schema
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATABASE RELATIONSHIPS                          │
-└─────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────┐       ┌──────────────────────┐
-│        users         │       │     conversations    │
-├──────────────────────┤       ├──────────────────────┤
-│ id (PK)              │───┐   │ id (PK)              │
-│ email                │   │   │ user_id (FK)    ─────┼───┐
-│ hashed_password      │   │   │ title                │   │
-│ role                 │   │   │ created_at           │   │
-│ created_at           │   │   │ updated_at           │   │
-└──────────────────────┘   │   └──────────────────────┘   │
-           │               │              │               │
-           │               │              │               │
-           │               │              ▼               │
-           │               │   ┌──────────────────────┐   │
-           │               │   │    chat_history      │   │
-           │               │   ├──────────────────────┤   │
-           │               └──▶│ id (PK)              │   │
-           │                   │ conversation_id (FK) │◀──┘
-           │                   │ user_id (FK)    ─────┼───┐
-           │                   │ role (user/assistant)│   │
-           │                   │ content              │   │
-           │                   │ created_at           │   │
-           │                   └──────────────────────┘   │
-           │                                              │
-           │               ┌──────────────────────────────┘
-           │               │
-           ▼               ▼
-┌──────────────────────┐
-│      documents       │
-├──────────────────────┤
-│ id (PK)              │
-│ owner_id (FK)   ─────┼───▶ users.id
-│ title                │
-│ filename             │
-│ file_path            │
-│ status               │
-│ created_at           │
-└──────────────────────┘
-
-Legend: (PK) = Primary Key, (FK) = Foreign Key
-```
-
-## Project Structure
-
-```
-ai-customer-support/
-├── frontend/          # Next.js 15 app (TypeScript, Tailwind CSS)
-│   ├── app/           # App router pages (chat, login, register, documents)
-│   └── components/    # Reusable components (ChatBubble, UploadModal, etc.)
-├── backend/           # FastAPI service (Python)
-│   ├── api/           # Route handlers (auth, chat, documents)
-│   ├── core/          # Config, database, security
-│   ├── jobs/          # Celery worker and background tasks
-│   ├── models/        # SQLAlchemy models
-│   └── schemas/       # Pydantic schemas
-└── ai_engine/         # RAG pipeline (Python)
-    ├── embeddings/    # Sentence transformer embeddings
-    ├── llm/           # Gemini LLM integration, prompts, critique & regeneration
-    ├── rag/           # Chunking & pipeline orchestration
-    ├── retriever/     # FAISS retriever & MMR reranking
-    ├── vectorstore/   # FAISS index management
-    └── utils/         # Confidence, hallucination detection, postprocessing
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL
-- RabbitMQ (for Celery message broker)
-- Redis (for caching and rate limiting)
-- Google API Key (for Gemini)
-
-### 1. Database Setup
-```bash
-# Create PostgreSQL database
-createdb ai_support
-
-# Or with user/password
-psql -c "CREATE DATABASE ai_support;"
-psql -c "CREATE USER ai_user WITH PASSWORD 'your_password';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE ai_support TO ai_user;"
-```
-
-### 2. Backend Setup
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Create .env file
-cat > .env << EOF
-JWT_SECRET_KEY=your-super-secret-key-change-this
-DATABASE_URL=postgresql+asyncpg://ai_user:your_password@localhost:5432/ai_support
-AI_ENGINE_URL=http://localhost:9000
-celery_broker_url=amqp://guest:guest@localhost:5672//
-celery_result_backend=rpc://
-EOF
-
-# Run the server
-uvicorn main:app --reload --port 8000
-
-# In a separate terminal, run the Celery worker
-celery -A jobs.worker worker --loglevel=info
-```
-
-### 3. AI Engine Setup
-```bash
-cd ai_engine
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Create .env file
-cat > .env << EOF
-GOOGLE_API_KEY=your-gemini-api-key
-BACKEND_URL=http://localhost:8000
-EOF
-
-# Run the server
-uvicorn app:app --reload --port 9000
-```
-
-### 4. Frontend Setup
-```bash
-cd frontend
-npm install
-
-# Run the dev server
 npm run dev
 ```
 
-### 5. Access the App
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000/docs
-- AI Engine API: http://localhost:9000/docs
+### Access URLs
 
-## 📝 Environment Variables
+- Frontend: `http://localhost:3000`
+- Backend docs: `http://localhost:8000/docs`
+- AI engine docs: `http://localhost:9000/docs`
 
-### Backend `.env`
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `JWT_SECRET_KEY` | Secret key for JWT signing | ✅ |
-| `DATABASE_URL` | PostgreSQL connection string (asyncpg) | ✅ |
-| `AI_ENGINE_URL` | AI engine service URL | ✅ (default: `http://localhost:9000`) |
-| `JWT_ALGORITHM` | JWT algorithm | ❌ (default: `HS256`) |
-| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry | ❌ (default: `1440`) |
-| `celery_broker_url` | RabbitMQ connection URL | ❌ |
-| `celery_result_backend` | Celery result backend | ❌ |
+For fuller setup details, use `QUICK_START.md`.
 
-### AI Engine `.env`
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GOOGLE_API_KEY` | Google Gemini API key | ✅ |
-| `BACKEND_URL` | Backend service URL | ❌ (default: `http://localhost:8000`) |
+## Key APIs
 
-## 🔌 API Endpoints
+### Backend API Highlights
 
-### Backend (Port 8000)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/register` | Register new user |
-| POST | `/auth/login` | Login and get JWT token |
-| GET | `/documents/` | List user's documents |
-| POST | `/documents/upload` | Upload PDF document |
-| DELETE | `/documents/{id}` | Delete a document |
-| POST | `/chat/stream` | Stream chat response (SSE) |
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /chat/stream`
+- `POST /documents/upload`
+- `GET /admin/stats`
+- `GET /admin/debug/conversations/{conversation_id}`
+- `POST /admin/investigations/run`
 
-### AI Engine (Port 9000)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Health check |
-| POST | `/index-document` | Index document for RAG |
-| POST | `/query` | Query documents (non-streaming) |
-| POST | `/stream` | Query documents (streaming) |
-| PUT | `/update-document` | Re-index updated document |
-| DELETE | `/delete-document/{id}` | Remove document from index |
-| POST | `/inspect-context` | View retrieved chunks without generating answer |
-| POST | `/critique` | LLM self-critique of answer quality |
-| POST | `/regenerate` | Regenerate answer with constraints |
+### AI Engine API Highlights
 
-## 🛠️ Tech Stack
+- `POST /query`
+- `POST /stream`
+- `POST /inspect-context`
+- `POST /critique`
+- `POST /regenerate`
 
-### Frontend
-- **Next.js 15** - React framework with App Router
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first styling
-- **React Markdown** - Markdown rendering
-- **React Syntax Highlighter** - Code highlighting
+See `docs/backend-api.md` and `docs/ai-engine-api.md` for the full contract.
 
-### Backend
-- **FastAPI** - High-performance Python API
-- **SQLAlchemy** - Async ORM for PostgreSQL
-- **Pydantic** - Data validation
-- **bcrypt** - Password hashing
-- **python-jose** - JWT handling
-- **httpx** - Async HTTP client
-- **Celery** - Distributed task queue
-- **RabbitMQ** - Message broker for Celery
-- **Redis** - Caching and rate limiting
+## Data Storage
 
-### AI Engine
-- **Google Gemini** - LLM (gemini-2.5-flash)
-- **Sentence Transformers** - Text embeddings (all-MiniLM-L6-v2)
-- **FAISS** - Vector similarity search
-- **LangChain** - Text chunking & chat memory
-- **PyMuPDF** - PDF text extraction
-- **scikit-learn** - Cosine similarity & MMR reranking
-- **NumPy** - Vector operations for hallucination detection
+- PostgreSQL stores users, documents, conversations, chat history, and admin audit data.
+- Redis stores cache and rate-limit state.
+- FAISS stores vector embeddings under `ai_engine/data/`.
 
-## 📁 Data Storage
+## Security Notes
 
-- **PostgreSQL** - Users, documents, chat history, conversations
-- **Redis** - Session caching, rate limiting counters
-- **RabbitMQ** - Task queue messages for Celery workers
-- **FAISS Index** - Vector embeddings stored in `ai_engine/data/`
-  - `faiss_index.bin` - Vector index
-  - `metadata.json` - Chunk metadata (text, document_id, title)
+- Passwords are hashed with bcrypt.
+- JWTs are used for authenticated requests.
+- Admin endpoints require admin role checks.
+- Internal service endpoints use internal API key checks.
+- CORS is configured for development and should be hardened for production.
 
-## 🔒 Security Notes
+## Current Focus
 
-- Passwords hashed with bcrypt (12 rounds)
-- JWT tokens expire after 24 hours by default
-- All document endpoints require authentication
-- CORS configured for development (update for production)
+The current product direction is an internal support copilot, starting with an admin-only, read-only Conversation Investigator. The authoritative V1 spec is in `docs/conversation-investigator-v1-spec.md`.
 
-## 🧪 Development Tips
+## Development Notes
 
-> ⚡ **Pro Tip:** Run all three services in separate terminal tabs for the best development experience.
+- Run frontend, backend, and AI engine in separate terminals.
+- Use backend and AI engine auto-reload during development.
+- Check browser console and service logs together when debugging cross-service issues.
+- Historical migration notes and summaries have been moved into `docs/archive/`.
 
-- Use `develop` branch for active work; PR into `main`
-- Backend auto-reloads with `--reload` flag
-- AI Engine auto-reloads with `--reload` flag
-- Frontend has hot module replacement built-in
-- Check browser console and terminal for errors
+## Roadmap Snapshot
 
----
+- Complete: RAG chat, streaming, auth, document workflows, admin dashboard, critique/debug tooling
+- In progress: internal support copilot workflow
+- Planned: broader analytics, additional file types, OAuth, deployment hardening
 
-## 🗺️ Roadmap
+## Contributing
 
-| Status | Feature |
-|:------:|:--------|
-| ✅ | RAG-based document querying |
-| ✅ | Streaming chat responses |
-| ✅ | JWT authentication |
-| ✅ | Celery background tasks |
-| ✅ | Conversation management |
-| 🚧 | Multi-language support |
-| 🚧 | Admin dashboard |
-| 📋 | Docker Compose setup |
-| 📋 | Kubernetes deployment |
-| 📋 | OAuth (Google, GitHub) |
-| 📋 | File type support (DOCX, TXT) |
-| 📋 | Analytics & usage metrics |
+1. Fork the repository.
+2. Create a feature branch.
+3. Commit your changes.
+4. Push the branch.
+5. Open a pull request.
 
-**Legend:** ✅ Complete | 🚧 In Progress | 📋 Planned
+## Support
 
----
+- Bug reports: `../../issues/new?template=bug_report.md`
+- Feature requests: `../../issues/new?template=feature_request.md`
+- Discussions: `../../discussions`
 
-## 🤝 Contributing
+## Acknowledgments
 
-Contributions are welcome! Here's how you can help:
+- Google Gemini
+- LangChain
+- FAISS
+- Sentence Transformers
+- FastAPI
+- Next.js
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
+## License
 
-> 📝 Please read our contributing guidelines before submitting a PR.
-
----
-
-## 💬 Support
-
-Having issues? Here's how to get help:
-
-- 🐛 **Bug Reports:** [Open an issue](../../issues/new?template=bug_report.md)
-- 💡 **Feature Requests:** [Open an issue](../../issues/new?template=feature_request.md)
-- 💬 **Discussions:** [Start a discussion](../../discussions)
-
----
-
-## 🙏 Acknowledgments
-
-- [Google Gemini](https://ai.google.dev) - LLM provider
-- [LangChain](https://langchain.com) - RAG framework components
-- [FAISS](https://github.com/facebookresearch/faiss) - Vector similarity search
-- [Sentence Transformers](https://sbert.net) - Text embeddings
-- [FastAPI](https://fastapi.tiangolo.com) - Backend framework
-- [Next.js](https://nextjs.org) - Frontend framework
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-**⭐ Star this repo if you find it helpful!**
-
-Made with ❤️ by [Avishek](https://github.com/avishek)
-
-</div>
+This project is licensed under the MIT License. See `LICENSE` for details.

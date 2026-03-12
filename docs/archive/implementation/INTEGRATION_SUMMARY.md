@@ -38,7 +38,7 @@ The hybrid vector storage system is integrated with core sync APIs and storage p
 
 ### Documentation
 
-6. **`HYBRID_VECTOR_STORAGE.md`** - New File ✨
+6. **`docs/archive/implementation/HYBRID_VECTOR_STORAGE.md`** - New File ✨
    - Complete architecture documentation
    - Setup instructions
    - Usage examples

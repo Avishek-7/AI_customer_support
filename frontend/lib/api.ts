@@ -358,6 +358,40 @@ interface AdminStats {
     usage_today: number;
 }
 
+export type InvestigationIntent =
+    | "investigate_root_cause"
+    | "explain_low_confidence"
+    | "draft_improved_answer"
+    | "recommend_next_action";
+
+export interface AdminInvestigationRunRequest {
+    conversation_id: number;
+    instruction_intent: InvestigationIntent;
+    constraints?: string;
+    k?: number;
+}
+
+export interface AdminInvestigationRunResponse {
+    investigation_id: number;
+    conversation_id: number;
+    instruction_intent: string;
+    diagnosis: string;
+    supporting_evidence: {
+        retrieved_chunks: Array<Record<string, unknown>>;
+        total_chunks_retrieved: number;
+        document_ids: number[];
+    };
+    quality_summary: {
+        confidence_score: number | null;
+        hallucination_score: number | null;
+        alignment_score: number | null;
+    };
+    recommended_next_actions: string[];
+    improved_draft_answer?: string | null;
+    status: string;
+    created_at: string;
+}
+
 export async function getAdminUsers(token: string) {
     return requestJson<Record<string, unknown>[]>("/admin/users", { token });
 }
@@ -388,6 +422,22 @@ export async function getAdminStats(token: string) {
 
 export async function getAdminConversationDebug(conversationId: number, token: string) {
     return requestJson<Record<string, unknown>>(`/admin/debug/conversations/${conversationId}`, { token });
+}
+
+export async function runAdminInvestigation(body: AdminInvestigationRunRequest, token: string) {
+    return requestJson<AdminInvestigationRunResponse>("/admin/investigations/run", {
+        method: "POST",
+        token,
+        body,
+        throwOnError: true,
+    });
+}
+
+export async function getAdminInvestigationsByConversation(conversationId: number, token: string) {
+    return requestJson<Record<string, unknown>>(`/admin/investigations/conversation/${conversationId}`, {
+        token,
+        throwOnError: true,
+    });
 }
 
 // ============================================================================

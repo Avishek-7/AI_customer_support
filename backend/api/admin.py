@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
-from typing import List
+from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime
 import httpx
+import json
+import time
 from core.database import get_db
 from core.roles import require_admin
 from core.config import settings
@@ -12,8 +14,8 @@ from models.document import Document
 from models.chat import ChatHistory
 from models.usage import APIUsage
 from models.conversation import Conversation
+from models.investigation_audit import InvestigationAudit
 from pydantic import BaseModel
-from typing import Optional
 from utils.logger import get_logger
 
 logger = get_logger("backend.api.admin")
@@ -49,6 +51,149 @@ class SystemStats(BaseModel):
     total_documents: int
     total_chats: int
     total_api_calls: int
+
+
+class InvestigationRunRequest(BaseModel):
+    conversation_id: int
+    instruction_intent: Literal[
+        "investigate_root_cause",
+        "explain_low_confidence",
+        "draft_improved_answer",
+        "recommend_next_action",
+    ] = "investigate_root_cause"
+    constraints: Optional[str] = None
+    k: int = 5
+
+
+class InvestigationEvidence(BaseModel):
+    retrieved_chunks: List[Dict[str, Any]]
+    total_chunks_retrieved: int
+    document_ids: List[int]
+
+
+class InvestigationQualitySummary(BaseModel):
+    confidence_score: Optional[float] = None
+    hallucination_score: Optional[float] = None
+    alignment_score: Optional[float] = None
+
+
+class InvestigationRunResponse(BaseModel):
+    investigation_id: int
+    conversation_id: int
+    instruction_intent: str
+    diagnosis: str
+    supporting_evidence: InvestigationEvidence
+    quality_summary: InvestigationQualitySummary
+    recommended_next_actions: List[str]
+    improved_draft_answer: Optional[str] = None
+    status: str
+    created_at: datetime
+
+
+def _derive_diagnosis(
+    intent: str,
+    quality: InvestigationQualitySummary,
+    chunks_retrieved: int,
+) -> str:
+    confidence = quality.confidence_score
+    hallucination = quality.hallucination_score
+    alignment = quality.alignment_score
+
+    if intent == "explain_low_confidence":
+        return (
+            f"Confidence is low at {confidence if confidence is not None else 'N/A'}, "
+            f"with {chunks_retrieved} chunks retrieved. "
+            "Likely causes are sparse retrieval coverage or weak source grounding."
+        )
+
+    if hallucination is not None and hallucination >= 0.6:
+        return (
+            f"High hallucination risk detected ({hallucination:.2f}) with alignment "
+            f"{alignment if alignment is not None else 'N/A'}."
+        )
+
+    if chunks_retrieved == 0:
+        return "No supporting chunks were retrieved, indicating a retrieval gap for this query."
+
+    return "Investigation completed with available retrieval and critique evidence."
+
+
+def _derive_recommended_actions(
+    intent: str,
+    quality: InvestigationQualitySummary,
+    chunks_retrieved: int,
+) -> List[str]:
+    actions = ["Review top retrieved chunks for relevance and freshness."]
+
+    if chunks_retrieved < 2:
+        actions.append("Re-index or expand source documents for this topic.")
+
+    if quality.hallucination_score is not None and quality.hallucination_score >= 0.6:
+        actions.append("Escalate to human review due to high hallucination risk.")
+
+    if quality.confidence_score is not None and quality.confidence_score < 0.5:
+        actions.append("Use narrower document filters and regenerate with explicit constraints.")
+
+    if intent == "recommend_next_action" and len(actions) < 3:
+        actions.append("Capture this case as a benchmark failure example for future evaluation.")
+
+    return actions
+
+
+async def _call_ai_engine_for_investigation(
+    query_text: str,
+    assistant_answer: Optional[str],
+    request: InvestigationRunRequest,
+) -> tuple[Dict[str, Any], Dict[str, Any], Optional[str], str, List[str]]:
+    headers = {"X-Internal-API-Key": settings.INTERNAL_API_KEY}
+    tools_called = ["debug/search-preview", "critique"]
+    status = "completed"
+    improved_draft_answer: Optional[str] = None
+
+    async with httpx.AsyncClient() as client:
+        search_response = await client.get(
+            f"{AI_ENGINE_URL}/debug/search-preview",
+            params={"query": query_text, "k": request.k},
+            headers=headers,
+            timeout=30.0,
+        )
+        search_data = search_response.json() if search_response.status_code == 200 else {}
+
+        critique_data: Dict[str, Any] = {}
+        if assistant_answer and search_data.get("chunks"):
+            critique_response = await client.post(
+                f"{AI_ENGINE_URL}/critique",
+                json={
+                    "question": query_text,
+                    "answer": assistant_answer,
+                    "sources": search_data.get("chunks", []),
+                },
+                headers=headers,
+                timeout=30.0,
+            )
+            critique_data = critique_response.json() if critique_response.status_code == 200 else {}
+
+        if request.instruction_intent == "draft_improved_answer" and assistant_answer:
+            safe_constraints = (request.constraints or "Improve clarity and grounding.").strip()[:300]
+            regenerate_response = await client.post(
+                f"{AI_ENGINE_URL}/regenerate",
+                json={
+                    "session_id": f"investigation-{request.conversation_id}",
+                    "query": query_text,
+                    "constraints": safe_constraints,
+                    "k": request.k,
+                    "previous_answer": assistant_answer,
+                },
+                headers=headers,
+                timeout=40.0,
+            )
+            tools_called.append("regenerate")
+            if regenerate_response.status_code == 200:
+                improved_draft_answer = regenerate_response.json().get("answer")
+            else:
+                status = "partial"
+
+    return search_data, critique_data, improved_draft_answer, status, tools_called
 
 
 # Get All Users
@@ -441,4 +586,183 @@ async def debug_conversation(
         "message_count": len(messages),
         "messages": messages,
         "debug_info": debug_info
+    }
+
+
+@router.post("/investigations/run", response_model=InvestigationRunResponse)
+async def run_investigation(
+    body: InvestigationRunRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """Admin-only: run a read-only conversation investigation and persist audit metadata."""
+    started_at = time.perf_counter()
+
+    conv_result = await db.execute(
+        select(Conversation).filter(Conversation.id == body.conversation_id)
+    )
+    conversation = conv_result.scalar_one_or_none()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    chats_result = await db.execute(
+        select(ChatHistory)
+        .filter(ChatHistory.conversation_id == body.conversation_id)
+        .order_by(ChatHistory.created_at.asc())
+    )
+    chats = chats_result.scalars().all()
+
+    last_user_msg = None
+    last_assistant_msg = None
+    for chat in reversed(chats):
+        if chat.role == "assistant" and last_assistant_msg is None:
+            last_assistant_msg = chat
+        if chat.role == "user" and last_user_msg is None:
+            last_user_msg = chat
+        if last_user_msg and last_assistant_msg:
+            break
+
+    if not last_user_msg:
+        raise HTTPException(status_code=400, detail="No user message found in conversation")
+
+    status = "completed"
+    tools_called: List[str] = []
+    search_data: Dict[str, Any] = {}
+    critique_data: Dict[str, Any] = {}
+    improved_draft_answer: Optional[str] = None
+
+    try:
+        search_data, critique_data, improved_draft_answer, status, tools_called = (
+            await _call_ai_engine_for_investigation(
+                query_text=last_user_msg.content,
+                assistant_answer=last_assistant_msg.content if last_assistant_msg else None,
+                request=body,
+            )
+        )
+    except Exception as exc:
+        status = "partial"
+        logger.error("Investigation ai_engine calls failed", extra={
+            "conversation_id": body.conversation_id,
+            "admin_id": admin_user.id,
+            "error": str(exc),
+        }, exc_info=True)
+
+    chunks = search_data.get("chunks", []) if isinstance(search_data, dict) else []
+    evidence = InvestigationEvidence(
+        retrieved_chunks=chunks,
+        total_chunks_retrieved=search_data.get("results_count", 0) if isinstance(search_data, dict) else 0,
+        document_ids=list({c.get("document_id") for c in chunks if c.get("document_id")}),
+    )
+
+    critique_root = critique_data.get("critique", {}) if isinstance(critique_data, dict) else {}
+    llm_critique = critique_root.get("llm_critique", {}) if isinstance(critique_root, dict) else {}
+    hallucination = critique_root.get("hallucination_detection", {}) if isinstance(critique_root, dict) else {}
+    confidence_raw = llm_critique.get("overall_score")
+    quality = InvestigationQualitySummary(
+        confidence_score=(confidence_raw / 10.0) if isinstance(confidence_raw, (int, float)) else None,
+        hallucination_score=hallucination.get("hallucination_score") if isinstance(hallucination, dict) else None,
+        alignment_score=hallucination.get("alignment_score") if isinstance(hallucination, dict) else None,
+    )
+
+    diagnosis = _derive_diagnosis(body.instruction_intent, quality, evidence.total_chunks_retrieved)
+    recommended_actions = _derive_recommended_actions(
+        body.instruction_intent,
+        quality,
+        evidence.total_chunks_retrieved,
+    )
+
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+    audit = InvestigationAudit(
+        investigator_user_id=admin_user.id,
+        conversation_id=body.conversation_id,
+        instruction_intent=body.instruction_intent,
+        tools_called=json.dumps(tools_called),
+        status=status,
+        latency_ms=latency_ms,
+        confidence_score=quality.confidence_score,
+        hallucination_score=quality.hallucination_score,
+        alignment_score=quality.alignment_score,
+        diagnosis_summary=diagnosis[:1000],
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(audit)
+
+    return InvestigationRunResponse(
+        investigation_id=audit.id,
+        conversation_id=body.conversation_id,
+        instruction_intent=body.instruction_intent,
+        diagnosis=diagnosis,
+        supporting_evidence=evidence,
+        quality_summary=quality,
+        recommended_next_actions=recommended_actions,
+        improved_draft_answer=improved_draft_answer,
+        status=status,
+        created_at=audit.created_at,
+    )
+
+
+@router.get("/investigations/{investigation_id}")
+async def get_investigation(
+    investigation_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """Admin-only: fetch one investigation audit record."""
+    result = await db.execute(
+        select(InvestigationAudit).filter(InvestigationAudit.id == investigation_id)
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    return {
+        "id": row.id,
+        "investigator_user_id": row.investigator_user_id,
+        "conversation_id": row.conversation_id,
+        "instruction_intent": row.instruction_intent,
+        "tools_called": json.loads(row.tools_called or "[]"),
+        "status": row.status,
+        "latency_ms": row.latency_ms,
+        "confidence_score": row.confidence_score,
+        "hallucination_score": row.hallucination_score,
+        "alignment_score": row.alignment_score,
+        "diagnosis_summary": row.diagnosis_summary,
+        "created_at": row.created_at,
+    }
+
+
+@router.get("/investigations/conversation/{conversation_id}")
+async def list_investigations_for_conversation(
+    conversation_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """Admin-only: list recent investigations for a conversation."""
+    result = await db.execute(
+        select(InvestigationAudit)
+        .filter(InvestigationAudit.conversation_id == conversation_id)
+        .order_by(InvestigationAudit.created_at.desc())
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+
+    return {
+        "conversation_id": conversation_id,
+        "returned_count": len(rows),
+        "items": [
+            {
+                "id": row.id,
+                "instruction_intent": row.instruction_intent,
+                "status": row.status,
+                "latency_ms": row.latency_ms,
+                "confidence_score": row.confidence_score,
+                "hallucination_score": row.hallucination_score,
+                "alignment_score": row.alignment_score,
+                "diagnosis_summary": row.diagnosis_summary,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
     }

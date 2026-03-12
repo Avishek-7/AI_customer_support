@@ -348,7 +348,7 @@ pip install asyncpg
 
 If issues occur:
 1. Revert to previous commit with sync code
-2. Check `ASYNC_MIGRATION_SUMMARY.md` for detailed changes
+2. Check `docs/archive/async/ASYNC_MIGRATION_SUMMARY.md` for detailed changes
 3. Review logs for specific async errors
 4. Test individual endpoints in isolation
 

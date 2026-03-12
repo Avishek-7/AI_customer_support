@@ -207,6 +207,14 @@ export default function AdminDashboard() {
             <p className="font-semibold text-lg">🔧 Debug</p>
             <p className="text-sm text-red-200 mt-2">Debug conversations and RAG pipeline</p>
           </button>
+
+          <button
+            onClick={() => router.push("/admin/investigations")}
+            className="bg-cyan-600 hover:bg-cyan-700 p-6 rounded-lg text-left transition"
+          >
+            <p className="font-semibold text-lg">🕵️ Investigations</p>
+            <p className="text-sm text-cyan-200 mt-2">Run read-only copilot investigations for weak answers</p>
+          </button>
         </div>
         </div>
       </div>

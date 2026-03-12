@@ -1188,6 +1188,131 @@ Debug a conversation with RAG pipeline details.
 
 ---
 
+### `POST /admin/investigations/run`
+
+Run an admin-only read-only copilot investigation for one conversation.
+
+| Property | Value |
+|----------|-------|
+| Auth Required | ✅ Yes |
+| Role Required | `admin` |
+
+**Request Body:**
+```json
+{
+  "conversation_id": 123,
+  "instruction_intent": "investigate_root_cause",
+  "constraints": "optional constraints for draft generation",
+  "k": 5
+}
+```
+
+| Field | Type | Required | Validation / Description |
+|-------|------|----------|--------------------------|
+| `conversation_id` | integer | ✅ | Existing conversation ID |
+| `instruction_intent` | string | ✅ | One of `investigate_root_cause`, `explain_low_confidence`, `draft_improved_answer`, `recommend_next_action` |
+| `constraints` | string | ❌ | Optional regenerate constraints, trimmed and capped |
+| `k` | integer | ❌ | Retrieval depth (recommended 1-20) |
+
+**Response (200):**
+```json
+{
+  "investigation_id": 1,
+  "conversation_id": 123,
+  "instruction_intent": "investigate_root_cause",
+  "diagnosis": "string",
+  "supporting_evidence": {
+    "retrieved_chunks": [],
+    "total_chunks_retrieved": 5,
+    "document_ids": [1, 2]
+  },
+  "quality_summary": {
+    "confidence_score": 0.72,
+    "hallucination_score": 0.12,
+    "alignment_score": 0.88
+  },
+  "recommended_next_actions": [
+    "Review top retrieved chunks for relevance and freshness."
+  ],
+  "improved_draft_answer": "optional string",
+  "status": "completed",
+  "created_at": "2026-03-12T10:30:00"
+}
+```
+
+Notes:
+- This endpoint is read-only with respect to conversation and chat message content.
+- The optional improved draft is returned but not written into chat history.
+- `status` may be `partial` when upstream AI calls fail but fallback output is returned.
+
+---
+
+### `GET /admin/investigations/{investigation_id}`
+
+Retrieve one investigation audit record.
+
+| Property | Value |
+|----------|-------|
+| Auth Required | ✅ Yes |
+| Role Required | `admin` |
+
+**Response (200):**
+```json
+{
+  "id": 1,
+  "investigator_user_id": 7,
+  "conversation_id": 123,
+  "instruction_intent": "investigate_root_cause",
+  "tools_called": ["debug/search-preview", "critique"],
+  "status": "completed",
+  "latency_ms": 842,
+  "confidence_score": 0.72,
+  "hallucination_score": 0.12,
+  "alignment_score": 0.88,
+  "diagnosis_summary": "string",
+  "created_at": "2026-03-12T10:30:00"
+}
+```
+
+---
+
+### `GET /admin/investigations/conversation/{conversation_id}`
+
+List recent investigations for a conversation.
+
+| Property | Value |
+|----------|-------|
+| Auth Required | ✅ Yes |
+| Role Required | `admin` |
+
+**Query Parameters:**
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `limit` | integer | ❌ | `20` | Maximum records (`1-100`) |
+
+**Response (200):**
+```json
+{
+  "conversation_id": 123,
+  "returned_count": 2,
+  "items": [
+    {
+      "id": 1,
+      "instruction_intent": "investigate_root_cause",
+      "status": "completed",
+      "latency_ms": 842,
+      "confidence_score": 0.72,
+      "hallucination_score": 0.12,
+      "alignment_score": 0.88,
+      "diagnosis_summary": "string",
+      "created_at": "2026-03-12T10:30:00"
+    }
+  ]
+}
+```
+
+---
+
 ## Vector Endpoints
 
 ### `POST /vectors/sync` (Internal)
