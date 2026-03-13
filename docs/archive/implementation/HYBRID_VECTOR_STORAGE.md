@@ -71,10 +71,17 @@ New endpoints for vector metadata management:
 | `/vectors/stats` | GET | Get vector storage statistics |
 
 Security controls for `backend/api/vectors.py`:
-- Require authenticated service-to-service access for `POST /vectors/sync` and `DELETE /vectors/document/{id}`
-- Enforce authorization checks (admin/service role or explicit scopes like `vectors:write` / `vectors:delete`)
-- Validate and sanitize `{id}` as an integer and reject invalid payload fields
-- Apply rate limiting and request auditing (actor, timestamp, request metadata)
+
+Implemented:
+- Require authenticated service-to-service access for `POST /vectors/sync`, `DELETE /vectors/document/{id}`, `GET /vectors/document/{id}`, and `GET /vectors/stats}` via `X-Internal-API-Key`
+- Require authenticated service-to-service access for `POST /vectors/sync`, `DELETE /vectors/document/{id}`, `GET /vectors/document/{id}`, and `GET /vectors/stats` via `X-Internal-API-Key`
+- Restrict sensitive write/delete routes to internal-network callers
+- Validate `{id}` as an integer at the FastAPI route layer
+
+Recommended:
+- Enforce finer-grained authorization scopes such as `vectors:write` / `vectors:delete`
+- Add explicit request auditing fields (actor, timestamp, request metadata, outcome)
+- Apply rate limiting where operationally appropriate
 - Enforce TLS in transit and avoid leaking internal error details in responses
 
 ## Setup & Migration
@@ -212,13 +219,13 @@ curl -X POST http://localhost:8000/vectors/sync \
     "metadata": [
         {
             "document_id": 1,
-            "chunk_id": 0,
+            "chunk_index": 0,
             "title": "Getting Started",
             "text": "Sample chunk text..."
         },
         {
             "document_id": 1,
-            "chunk_id": 1,
+            "chunk_index": 1,
             "title": "Getting Started",
             "text": "Another chunk..."
         }
@@ -226,8 +233,10 @@ curl -X POST http://localhost:8000/vectors/sync \
 }
 ```
 
-Required fields per chunk item: `document_id` (int), `chunk_id` (int), `text` (string).
+Required fields per chunk item: `document_id` (int), `chunk_index` (int), `text` (string).
 Optional but recommended: `title` (string).
+
+Backward-compatibility note: the current sync endpoint accepts legacy `chunk_id` payloads, but the canonical contract is `chunk_index`.
 
 ### Check Sync Status
 ```bash
@@ -297,7 +306,15 @@ pytest tests/test_vectors_api.py
 - Surface sync failures in logs/metrics and retry with bounded backoff where appropriate.
 - Track divergence indicators (FAISS count vs DB metadata count) and alert on sustained mismatch.
 
+### Retry and Backoff Behavior
+- Current implementation: no automatic retry/backoff is implemented in the live sync path; sync is best-effort and failures are logged.
+- Recommended future strategy: exponential backoff with jitter, for example base delay 1s, doubling up to a 30s cap, with 3 to 5 attempts per sync operation.
+- Operator mitigation today: review structured logs, compare `/vectors/stats` output against expected indexed documents, and run a manual re-sync when needed.
+- Recommended monitoring: counters for sync failures, alerts on sustained divergence, and a manual or queued reconciliation procedure for repeated failures.
+
 ### Monitoring & Metrics
+📋 **Recommended metrics**
+
 - Expose these metrics on application `/metrics` (Prometheus format):
     - `vector_storage.faiss.count` gauge (Prometheus name: `vector_storage_faiss_count`)
     - `vector_storage.db.count` gauge (Prometheus name: `vector_storage_db_count`)

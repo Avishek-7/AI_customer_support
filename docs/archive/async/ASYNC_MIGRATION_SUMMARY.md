@@ -8,7 +8,7 @@ Migrated backend and AI engine to async-first I/O patterns and removed blocking 
 ### 1. Database Layer (`backend/core/database.py`)
 - **Before**: Sync `create_engine` with `Session`
 - **After**: `create_async_engine` with `AsyncSession` and `async_sessionmaker`
-- URL conversion: Added automatic conversion to `postgresql+asyncpg://` for async driver
+- URL conversion: `DATABASE_URL` may use `postgresql://`, `postgres://`, or an existing async scheme; `backend/core/database.py` transparently upgrades supported PostgreSQL URLs to `postgresql+asyncpg://` for runtime async use
 - Dependency: `get_db()` is now async with `async with` context manager
 
 ### 2. API Routes - All Converted to Async
@@ -115,7 +115,10 @@ except Exception:
 - [x] Permission helpers (async ownership checks)
 - [x] AI engine HTTP calls (httpx.AsyncClient)
 - [x] Dependencies updated (asyncpg, httpx)
-- [ ] Async audit of remaining DB helper modules (e.g., usage tracking helpers)
+- [x] Async audit of remaining DB helper modules completed
+   - `backend/utils/usage_tracker.py` - async-safe (`await db.commit()` / rollback handling)
+   - `backend/utils/chat_persistence.py` - async-safe (`AsyncSession`, awaited queries and commit)
+   - `backend/utils/permissions.py` - async-safe (`AsyncSession`, awaited select queries)
 
 ## Testing Steps
 
@@ -129,7 +132,8 @@ except Exception:
    ```
 
 2. **Update database connection:**
-   - Ensure `DATABASE_URL` in `.env` uses async driver scheme: `postgresql+asyncpg://...`
+   - `DATABASE_URL` may remain `postgresql://...`; the runtime converts supported PostgreSQL URLs to `postgresql+asyncpg://...` automatically.
+   - For clarity, you can still set `DATABASE_URL` in `.env` directly to `postgresql+asyncpg://...`, but it is recommended rather than required.
    - No schema changes needed
 
 3. **Run backend:**

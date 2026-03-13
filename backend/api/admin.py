@@ -15,7 +15,7 @@ from models.chat import ChatHistory
 from models.usage import APIUsage
 from models.conversation import Conversation
 from models.investigation_audit import InvestigationAudit
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from utils.logger import get_logger
 
 logger = get_logger("backend.api.admin")
@@ -86,8 +86,23 @@ class InvestigationRunResponse(BaseModel):
     quality_summary: InvestigationQualitySummary
     recommended_next_actions: List[str]
     improved_draft_answer: Optional[str] = None
+    error_details: List[Dict[str, Any]] = Field(default_factory=list)
     status: str
     created_at: datetime
+
+
+def _build_upstream_error(response: httpx.Response, context: str) -> Dict[str, Any]:
+    response_body: Any
+    try:
+        response_body = response.json()
+    except ValueError:
+        response_body = response.text[:500] if response.text else response.reason_phrase
+
+    return {
+        "context": context,
+        "status_code": response.status_code,
+        "body": response_body,
+    }
 
 
 def _derive_diagnosis(
@@ -144,11 +159,12 @@ async def _call_ai_engine_for_investigation(
     query_text: str,
     assistant_answer: Optional[str],
     request: InvestigationRunRequest,
-) -> tuple[Dict[str, Any], Dict[str, Any], Optional[str], str, List[str]]:
+) -> tuple[Dict[str, Any], Dict[str, Any], Optional[str], str, List[str], List[Dict[str, Any]]]:
     headers = {"X-Internal-API-Key": settings.INTERNAL_API_KEY}
     tools_called = ["debug/search-preview", "critique"]
     status = "completed"
     improved_draft_answer: Optional[str] = None
+    errors: List[Dict[str, Any]] = []
 
     async with httpx.AsyncClient() as client:
         search_response = await client.get(
@@ -157,7 +173,13 @@ async def _call_ai_engine_for_investigation(
             headers=headers,
             timeout=30.0,
         )
-        search_data = search_response.json() if search_response.status_code == 200 else {}
+        if search_response.status_code == 200:
+            search_data = search_response.json()
+        else:
+            status = "failed"
+            search_data = {"error": _build_upstream_error(search_response, "debug/search-preview")}
+            errors.append(search_data["error"])
+            logger.error("AI engine search preview failed", extra=search_data["error"])
 
         critique_data: Dict[str, Any] = {}
         if assistant_answer and search_data.get("chunks"):
@@ -171,8 +193,13 @@ async def _call_ai_engine_for_investigation(
                 headers=headers,
                 timeout=30.0,
             )
-            critique_data = critique_response.json() if critique_response.status_code == 200 else {}
-
+            if critique_response.status_code == 200:
+                critique_data = critique_response.json()
+            else:
+                status = "failed"
+                critique_data = {"error": _build_upstream_error(critique_response, "critique")}
+                errors.append(critique_data["error"])
+                logger.error("AI engine critique failed", extra=critique_data["error"])
         if request.instruction_intent == "draft_improved_answer" and assistant_answer:
             safe_constraints = (request.constraints or "Improve clarity and grounding.").strip()[:300]
             regenerate_response = await client.post(
@@ -192,8 +219,11 @@ async def _call_ai_engine_for_investigation(
                 improved_draft_answer = regenerate_response.json().get("answer")
             else:
                 status = "partial"
+                regenerate_error = _build_upstream_error(regenerate_response, "regenerate")
+                errors.append(regenerate_error)
+                logger.error("AI engine regenerate failed", extra=regenerate_error)
 
-    return search_data, critique_data, improved_draft_answer, status, tools_called
+    return search_data, critique_data, improved_draft_answer, status, tools_called, errors
 
 
 # Get All Users
@@ -630,9 +660,10 @@ async def run_investigation(
     search_data: Dict[str, Any] = {}
     critique_data: Dict[str, Any] = {}
     improved_draft_answer: Optional[str] = None
+    error_details: List[Dict[str, Any]] = []
 
     try:
-        search_data, critique_data, improved_draft_answer, status, tools_called = (
+        search_data, critique_data, improved_draft_answer, status, tools_called, error_details = (
             await _call_ai_engine_for_investigation(
                 query_text=last_user_msg.content,
                 assistant_answer=last_assistant_msg.content if last_assistant_msg else None,
@@ -646,6 +677,7 @@ async def run_investigation(
             "admin_id": admin_user.id,
             "error": str(exc),
         }, exc_info=True)
+        error_details.append({"context": "ai_engine", "status_code": None, "body": str(exc)})
 
     chunks = search_data.get("chunks", []) if isinstance(search_data, dict) else []
     evidence = InvestigationEvidence(
@@ -697,6 +729,7 @@ async def run_investigation(
         quality_summary=quality,
         recommended_next_actions=recommended_actions,
         improved_draft_answer=improved_draft_answer,
+        error_details=error_details,
         status=status,
         created_at=audit.created_at,
     )

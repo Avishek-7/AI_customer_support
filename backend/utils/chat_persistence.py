@@ -2,6 +2,7 @@ from typing import Tuple, Optional
 from models.chat import ChatHistory
 from models.conversation import Conversation
 from utils.logger import get_logger
+from utils.conversation_title import derive_conversation_title
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
@@ -82,9 +83,9 @@ async def save_chat_turn(
         db.add(user_chat)
         db.add(assistant_chat)
         
-        # Update conversation title on first message (only once - don't override user edits)
+        # Update conversation title only once using a sanitized assistant-led summary.
         if conversation.title == "New Conversation":
-            conversation.title = user_message[:40] + ("..." if len(user_message) > 40 else "")
+            conversation.title = derive_conversation_title(user_message, assistant_response)
             conversation.updated_at = timestamp
         
         await db.commit()

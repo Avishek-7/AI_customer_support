@@ -191,15 +191,59 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
 ## Background Tasks
 
 ### Explicit Sync/Async Entry Points
-```python
-def do_work_sync():
-    # sync implementation for sync callers
-    ...
 
-async def do_work_async():
-    # async implementation for async callers
-    ...
+```python
+import asyncio
+
+async def do_work_async(job_id: int) -> None:
+    # Main async implementation used by async routes and workers.
+    try:
+        await some_async_io(job_id)
+    except Exception:
+        logger.exception("background job failed", extra={"job_id": job_id})
+        raise
+
+def do_work_sync(job_id: int) -> None:
+    # Sync wrapper for CLI scripts or sync worker entry points.
+    asyncio.run(do_work_async(job_id))
 ```
+
+### FastAPI BackgroundTasks
+
+```python
+from fastapi import BackgroundTasks
+
+@router.post("/jobs/{job_id}")
+async def launch_job(job_id: int, background_tasks: BackgroundTasks):
+    background_tasks.add_task(do_work_sync, job_id)
+    return {"status": "accepted"}
+```
+
+Use `BackgroundTasks` only for short in-process follow-up work where losing the task on process restart is acceptable.
+
+### In-process async tasks
+
+```python
+task = asyncio.create_task(do_work_async(job_id))
+task.add_done_callback(lambda t: logger.exception("task failed") if t.exception() else None)
+```
+
+Use `asyncio.create_task(...)` only when the task lifecycle is tied to the current process and you have explicit error handling, cancellation handling, and shutdown strategy.
+
+### When to use a queue
+
+Use Celery, RQ, or another external worker queue when work is long-running, retryable, business-critical, or should survive API process restarts.
+
+Recommended split:
+- In-process background task: quick post-response work, best-effort notifications, lightweight cache refreshes.
+- External queue: document indexing, expensive reconciliation, retry-heavy tasks, scheduled jobs.
+
+### Error handling and lifecycle guidance
+
+- Always log task failures with job identifiers and context.
+- Add bounded retries for transient failures; do not retry forever in-process.
+- Ensure tasks are cancelled or awaited during application shutdown when appropriate.
+- Do not rely on HTTP responses to surface failures from post-response background work; use logs, metrics, or queue state.
 
 ## Key Rules
 

@@ -105,7 +105,7 @@ async def sync_vector_metadata(
             
             vector_meta = VectorMetadata(
                 document_id=document_id,
-                chunk_index=meta.get("chunk_id", 0),
+                chunk_index=meta.get("chunk_index", meta.get("chunk_id", 0)),
                 text=meta.get("text", ""),
                 faiss_index=faiss_pos,
                 chunk_length=len(meta.get("text", ""))

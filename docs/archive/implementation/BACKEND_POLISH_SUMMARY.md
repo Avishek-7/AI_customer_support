@@ -350,13 +350,15 @@ All log unauthorized access attempts
 
 4. **Centralized Persistence:**
    - Both `/chat` and `/stream` use `save_chat_turn()`
-   - Background task for streaming
-   - Proper error handling (logging but non-blocking)
+   - `POST /chat/stream` persists inline during the open SSE stream, not via a post-response FastAPI background task
+   - Streaming persistence failures can be emitted as SSE `error` events before stream close
+   - Regular FastAPI background tasks run after the response and cannot return failures to callers; they must be logged and retried with bounded retry logic instead
 
 5. **Conversation Title:**
-   - Automatically set on first message in `save_chat_turn()`
+   - Automatically set on first message in `save_chat_turn()` using a sanitized assistant-response summary
    - Respects user edits (only sets if "New Conversation")
    - Removed duplicate logic from endpoints
+   - Raw conversation titles should not be written to higher-retention logs; use masked or hashed title identifiers in logs/analytics
 
 ---
 
@@ -381,6 +383,20 @@ FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
 -- ChatHistory already has timestamp column (verify it exists)
+
+-- Legacy Chat table cleanup (if present in older environments)
+-- 1. Back up the old table before removal
+CREATE TABLE IF NOT EXISTS chat_backup AS SELECT * FROM chat;
+
+-- 2. If legacy rows must be retained, map/export them into ChatHistory before drop.
+--    This requires a project-specific field mapping review; there is no automated migration
+--    script for legacy `chat` -> `chat_history` in the current repo.
+
+-- 3. Drop foreign keys or dependent indexes that reference chat if your database still has them.
+--    In PostgreSQL, inspect pg_constraint / pg_indexes for references first.
+
+-- 4. Drop the legacy table only after backup/retention review
+DROP TABLE IF EXISTS chat CASCADE;
 ```
 
 ### Environment Variables:
@@ -389,14 +405,22 @@ EXECUTE FUNCTION update_updated_at_column();
 - Error logging uses existing logger infrastructure
 
 ### Testing Checklist:
-- [ ] All conversation endpoints return metadata
-- [ ] `/chat` and `/stream` both save messages
-- [ ] Rate limiting blocks excess requests (429)
-- [ ] Usage tracking logs all requests
-- [ ] Error responses don't leak internals
-- [ ] Permission checks prevent cross-user access
-- [ ] All latency values are logged
-- [ ] Conversation title auto-set only on first message
+- [ ] Verify all conversation endpoints return metadata
+- [ ] Verify `/chat` and `/stream` both save messages
+- [ ] Verify rate limiting blocks excess requests with 429 when storage is healthy
+- [ ] Verify production fail-closed behavior returns 503 when Redis-backed limiter storage is unavailable
+- [ ] Verify usage tracking logs successful requests
+- [ ] Verify error responses do not leak internals
+- [ ] Verify permission checks prevent cross-user access
+- [ ] Verify latency values are logged across chat and conversation endpoints
+- [ ] Verify conversation title auto-set runs only on first message and uses sanitized assistant-response content
+- [ ] Verify conversation listing pagination (`limit` / `offset`) preserves total counts and `message_count` consistency across pages
+- [ ] Verify conversation listings remain sorted by `updated_at` while paginating
+- [ ] Verify no conversations are skipped or duplicated across page boundaries
+
+Current repo status note:
+- Only limited automated backend tests exist today, and they do not cover the full conversation/rate-limit matrix above.
+- Treat this checklist as required verification work, not as already-completed evidence.
 
 ---
 
@@ -412,7 +436,7 @@ EXECUTE FUNCTION update_updated_at_column();
 
 ### Reliability:
 ✅ Rollback on database failures
-✅ Graceful degradation (Redis unavailable)
+✅ Fail closed in production by default when Redis-backed rate limiting is unavailable; in-memory fallback is now a development/single-instance exception only
 ✅ Non-blocking error handling (chat persistence failure doesn't break response)
 ✅ Transaction safety for multi-step operations
 ✅ Comprehensive error logging for debugging
@@ -488,7 +512,12 @@ EXECUTE FUNCTION update_updated_at_column();
 
 1. **Test** all endpoints thoroughly
 2. **Deploy** database migrations
-3. **Rollback plan**: document and test rollback steps, including restoring Chat model-related changes if needed
+3. **Rollback plan**:
+   - The legacy Chat model/table is treated as removed from the current schema and application code.
+   - Before any destructive legacy-table cleanup, create a full database backup or an explicit `chat` table export such as `CREATE TABLE chat_backup AS SELECT * FROM chat;` and store it in your database backup location alongside the deployment artifact/version tag.
+   - To roll back code, redeploy the previous application commit or release tag and restore matching environment configuration.
+   - To roll back schema, restore the pre-drop backup, recreate the legacy `chat` table if needed, then re-run the older application migrations expected by the rolled-back code.
+   - Validation after rollback should include: backend/AI-engine health checks, sample login, sample chat round-trip, sample conversation query, and spot checks of referential integrity between `users`, `conversations`, and restored chat data.
 4. **Monitoring thresholds**: define explicit alerts (error-rate and p99 latency thresholds)
 5. **Gradual rollout strategy**: use canary/feature-flag rollout with percentage ramps
 6. **Incident response plan**: define on-call ownership and escalation path

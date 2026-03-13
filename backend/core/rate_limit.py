@@ -5,6 +5,11 @@ from fastapi import HTTPException
 from utils.logger import get_logger
 from core.error_handler import ErrorHandler
 from core.config import settings
+from utils.metrics import (
+    RATE_LIMIT_FAIL_CLOSED_TOTAL,
+    RATE_LIMIT_IN_MEMORY_FALLBACK_TOTAL,
+    RATE_LIMIT_REDIS_DEGRADED,
+)
 
 logger = get_logger("backend.core.rate_limit")
 
@@ -23,6 +28,7 @@ try:
 except Exception as e:
     REDIS_AVAILABLE = False
     redis = None
+    RATE_LIMIT_REDIS_DEGRADED.set(1)
     logger.warning(f"Redis not available - using in-memory limiter fallback: {e}")
 
 _IN_MEMORY_LIMITS = {}
@@ -83,9 +89,16 @@ def rate_limit_key(key: str, limit=100, window=60):
         circuit_open_until = _REDIS_CIRCUIT_OPEN_UNTIL
 
     if (not REDIS_AVAILABLE or redis is None) or now < circuit_open_until:
+        RATE_LIMIT_REDIS_DEGRADED.set(1)
+        if settings.RATE_LIMIT_FAIL_CLOSED_ON_REDIS_UNAVAILABLE:
+            reason = "circuit_open" if now < circuit_open_until else "redis_unavailable"
+            RATE_LIMIT_FAIL_CLOSED_TOTAL.labels(reason=reason).inc()
+            logger.error("Rate limiting failed closed due to unavailable distributed store", extra={"key": key, "reason": reason})
+            raise ErrorHandler.service_unavailable("Rate limiting service temporarily unavailable")
         if now < circuit_open_until:
             logger.warning("Redis circuit breaker open, using in-memory limiter", extra={"key": key})
         try:
+            RATE_LIMIT_IN_MEMORY_FALLBACK_TOTAL.labels(reason="circuit_open" if now < circuit_open_until else "redis_unavailable").inc()
             _in_memory_rate_limit(key=key, limit=limit, window=window)
             return
         except HTTPException:
@@ -112,6 +125,7 @@ def rate_limit_key(key: str, limit=100, window=60):
         with _REDIS_CIRCUIT_LOCK:
             _REDIS_FAIL_COUNT = 0
             _REDIS_CIRCUIT_OPEN_UNTIL = 0.0
+        RATE_LIMIT_REDIS_DEGRADED.set(0)
     except HTTPException:
         raise
     except Exception as e:
@@ -124,13 +138,19 @@ def rate_limit_key(key: str, limit=100, window=60):
                 opened_circuit = True
 
         if opened_circuit:
+            RATE_LIMIT_REDIS_DEGRADED.set(1)
             logger.warning("Opening Redis rate-limit circuit breaker", extra={
                 "open_seconds": _REDIS_CIRCUIT_SECONDS,
                 "failure_count": failure_count,
             })
 
         logger.error(f"Rate limit check failed: {e}", extra={"key": key})
+        if settings.RATE_LIMIT_FAIL_CLOSED_ON_REDIS_UNAVAILABLE:
+            reason = "redis_operation_failed"
+            RATE_LIMIT_FAIL_CLOSED_TOTAL.labels(reason=reason).inc()
+            raise ErrorHandler.service_unavailable("Rate limiting service temporarily unavailable")
         try:
+            RATE_LIMIT_IN_MEMORY_FALLBACK_TOTAL.labels(reason="redis_operation_failed").inc()
             _in_memory_rate_limit(key=key, limit=limit, window=window)
         except HTTPException:
             raise

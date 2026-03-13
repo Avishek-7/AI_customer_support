@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Redis (for rate limiting)
     REDIS_URL: str = "redis://localhost:6379/0"
+    RATE_LIMIT_FAIL_CLOSED_ON_REDIS_UNAVAILABLE: bool = True
 
     # Chat response cache
     CACHE_ENABLED: bool = True

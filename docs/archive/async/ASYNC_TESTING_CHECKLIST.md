@@ -18,7 +18,58 @@ pip install httpx
 - Database should be PostgreSQL (asyncpg compatible)
 - Redis optional (for background jobs)
 
-### 3. Start Services
+### 3. Run Database Migrations
+
+This repository does not currently use Alembic. Run the project migration scripts that apply to your environment before starting services.
+
+Minimum setup for current local testing:
+
+```bash
+cd backend
+python -m migrations.add_vector_metadata
+python migrate_add_vector_unique_constraint.py
+```
+
+If your local database predates newer conversation or reset-token changes, also run the relevant migration scripts in `backend/migrations/` and the top-level backend migration helpers.
+
+### 4. Create the First Admin User
+
+Two supported options:
+
+Option A: helper script
+
+```bash
+cd backend
+python scripts/create_admin.py --email admin@example.com --password 'change-me-now' --name 'Local Admin'
+```
+
+Option B: register normally, then promote with SQL
+
+```sql
+UPDATE users
+SET role = 'admin'
+WHERE email = 'admin@example.com';
+```
+
+### 5. Configure Internal Auth Keys
+
+Set a strong random `INTERNAL_API_KEY` in both backend and AI engine `.env` files.
+
+Examples for generating a secure value:
+
+```bash
+python - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+```
+
+Current repo note:
+- `INTERNAL_API_KEY` is the implemented shared secret.
+- A separate `AI_ENGINE_SERVICE_TOKEN` setting is not implemented in the current codebase.
+- Internal vector endpoints expect the header `X-Internal-API-Key: <INTERNAL_API_KEY>`.
+
+### 6. Start Services
 ```bash
 # Terminal 1 - Backend
 cd backend

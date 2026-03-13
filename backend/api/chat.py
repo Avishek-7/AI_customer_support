@@ -25,6 +25,7 @@ from schemas.chat_schema import ChatHistoryList, ChatHistoryItem
 from schemas.conversation_schema import ConversationCreate, ConversationResponse, ConversationList, ConversationUpdate
 from utils.logger import get_logger
 from utils.chat_persistence import save_chat_turn
+from utils.conversation_title import title_hash_for_logs
 
 logger = get_logger("backend.api.chat")
 
@@ -509,7 +510,7 @@ async def create_conversation(
     
     logger.info(f"Creating new conversation", extra={
         "user_id": current_user.id,
-        "title": body.title
+        "title_hash": title_hash_for_logs(body.title)
     })
     
     conversation = Conversation(
@@ -525,7 +526,7 @@ async def create_conversation(
     logger.info(f"Conversation created", extra={
         "user_id": current_user.id,
         "conversation_id": conversation.id,
-        "title": conversation.title,
+        "title_hash": title_hash_for_logs(conversation.title),
         "latency": f"{latency:.3f}s"
     })
     
@@ -603,7 +604,7 @@ async def get_conversation(
     logger.info(f"Conversation retrieved", extra={
         "user_id": current_user.id,
         "conversation_id": conversation_id,
-        "title": conversation.title,
+        "title_hash": title_hash_for_logs(conversation.title),
         "latency": f"{latency:.3f}s"
     })
     
@@ -647,7 +648,7 @@ async def update_conversation(
     logger.info(f"Conversation updated", extra={
         "user_id": current_user.id,
         "conversation_id": conversation_id,
-        "new_title": conversation.title,
+        "new_title_hash": title_hash_for_logs(conversation.title),
         "latency": f"{latency:.3f}s"
     })
     
