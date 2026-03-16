@@ -17,6 +17,7 @@ from models.conversation import Conversation
 from models.investigation_audit import InvestigationAudit
 from pydantic import BaseModel, Field
 from utils.logger import get_logger
+import uuid
 
 logger = get_logger("backend.api.admin")
 
@@ -79,6 +80,7 @@ class InvestigationQualitySummary(BaseModel):
 
 class InvestigationRunResponse(BaseModel):
     investigation_id: int
+    investigation_correlation_id: Optional[str] = None
     conversation_id: int
     instruction_intent: str
     diagnosis: str
@@ -103,6 +105,10 @@ def _build_upstream_error(response: httpx.Response, context: str) -> Dict[str, A
         "status_code": response.status_code,
         "body": response_body,
     }
+
+
+def _new_investigation_correlation_id() -> str:
+    return f"inv-{uuid.uuid4().hex[:12]}"
 
 
 def _derive_diagnosis(
@@ -159,8 +165,12 @@ async def _call_ai_engine_for_investigation(
     query_text: str,
     assistant_answer: Optional[str],
     request: InvestigationRunRequest,
+    investigation_correlation_id: str,
 ) -> tuple[Dict[str, Any], Dict[str, Any], Optional[str], str, List[str], List[Dict[str, Any]]]:
-    headers = {"X-Internal-API-Key": settings.INTERNAL_API_KEY}
+    headers = {
+        "X-Internal-API-Key": settings.INTERNAL_API_KEY,
+        "X-Correlation-ID": investigation_correlation_id,
+    }
     tools_called = ["debug/search-preview", "critique"]
     status = "completed"
     improved_draft_answer: Optional[str] = None
@@ -178,8 +188,15 @@ async def _call_ai_engine_for_investigation(
         else:
             status = "failed"
             search_data = {"error": _build_upstream_error(search_response, "debug/search-preview")}
+            search_data["error"]["investigation_correlation_id"] = investigation_correlation_id
             errors.append(search_data["error"])
-            logger.error("AI engine search preview failed", extra=search_data["error"])
+            logger.error(
+                "AI engine search preview failed",
+                extra={
+                    **search_data["error"],
+                    "investigation_correlation_id": investigation_correlation_id,
+                },
+            )
 
         critique_data: Dict[str, Any] = {}
         if assistant_answer and search_data.get("chunks"):
@@ -198,8 +215,15 @@ async def _call_ai_engine_for_investigation(
             else:
                 status = "failed"
                 critique_data = {"error": _build_upstream_error(critique_response, "critique")}
+                critique_data["error"]["investigation_correlation_id"] = investigation_correlation_id
                 errors.append(critique_data["error"])
-                logger.error("AI engine critique failed", extra=critique_data["error"])
+                logger.error(
+                    "AI engine critique failed",
+                    extra={
+                        **critique_data["error"],
+                        "investigation_correlation_id": investigation_correlation_id,
+                    },
+                )
         if request.instruction_intent == "draft_improved_answer" and assistant_answer:
             safe_constraints = (request.constraints or "Improve clarity and grounding.").strip()[:300]
             regenerate_response = await client.post(
@@ -220,8 +244,15 @@ async def _call_ai_engine_for_investigation(
             else:
                 status = "partial"
                 regenerate_error = _build_upstream_error(regenerate_response, "regenerate")
+                regenerate_error["investigation_correlation_id"] = investigation_correlation_id
                 errors.append(regenerate_error)
-                logger.error("AI engine regenerate failed", extra=regenerate_error)
+                logger.error(
+                    "AI engine regenerate failed",
+                    extra={
+                        **regenerate_error,
+                        "investigation_correlation_id": investigation_correlation_id,
+                    },
+                )
 
     return search_data, critique_data, improved_draft_answer, status, tools_called, errors
 
@@ -627,6 +658,7 @@ async def run_investigation(
 ):
     """Admin-only: run a read-only conversation investigation and persist audit metadata."""
     started_at = time.perf_counter()
+    investigation_correlation_id = _new_investigation_correlation_id()
 
     conv_result = await db.execute(
         select(Conversation).filter(Conversation.id == body.conversation_id)
@@ -668,6 +700,7 @@ async def run_investigation(
                 query_text=last_user_msg.content,
                 assistant_answer=last_assistant_msg.content if last_assistant_msg else None,
                 request=body,
+                investigation_correlation_id=investigation_correlation_id,
             )
         )
     except Exception as exc:
@@ -675,9 +708,28 @@ async def run_investigation(
         logger.error("Investigation ai_engine calls failed", extra={
             "conversation_id": body.conversation_id,
             "admin_id": admin_user.id,
+            "investigation_correlation_id": investigation_correlation_id,
             "error": str(exc),
         }, exc_info=True)
-        error_details.append({"context": "ai_engine", "status_code": None, "body": str(exc)})
+        error_details.append(
+            {
+                "context": "ai_engine",
+                "status_code": None,
+                "body": str(exc),
+                "investigation_correlation_id": investigation_correlation_id,
+            }
+        )
+
+    logger.info(
+        "Investigation run completed",
+        extra={
+            "conversation_id": body.conversation_id,
+            "admin_id": admin_user.id,
+            "investigation_correlation_id": investigation_correlation_id,
+            "status": status,
+            "error_count": len(error_details),
+        },
+    )
 
     chunks = search_data.get("chunks", []) if isinstance(search_data, dict) else []
     evidence = InvestigationEvidence(
@@ -722,6 +774,7 @@ async def run_investigation(
 
     return InvestigationRunResponse(
         investigation_id=audit.id,
+        investigation_correlation_id=investigation_correlation_id,
         conversation_id=body.conversation_id,
         instruction_intent=body.instruction_intent,
         diagnosis=diagnosis,

@@ -60,3 +60,6 @@ docker-compose.override.yml
 *.bak
 tsconfig.tsbuildinfo
 pip-wheel-metadata/
+
+# Local planning notes
+docs/archive/project-notes/local-plan.md
