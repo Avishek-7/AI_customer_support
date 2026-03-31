@@ -15,7 +15,7 @@ from models.chat import ChatHistory
 from models.usage import APIUsage
 from models.conversation import Conversation
 from models.investigation_audit import InvestigationAudit
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from utils.logger import get_logger
 import uuid
 
@@ -55,15 +55,30 @@ class SystemStats(BaseModel):
 
 
 class InvestigationRunRequest(BaseModel):
-    conversation_id: int
+    conversation_id: int = Field(gt=0)
     instruction_intent: Literal[
         "investigate_root_cause",
         "explain_low_confidence",
         "draft_improved_answer",
         "recommend_next_action",
     ] = "investigate_root_cause"
-    constraints: Optional[str] = None
-    k: int = 5
+    constraints: Optional[str] = Field(default=None, max_length=300)
+    k: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("constraints")
+    @classmethod
+    def _normalize_constraints(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def _enforce_constraints_by_intent(self):
+        # Constraints only affect regeneration; ignore for other intents to keep behavior explicit.
+        if self.instruction_intent != "draft_improved_answer":
+            self.constraints = None
+        return self
 
 
 class InvestigationEvidence(BaseModel):
@@ -120,23 +135,32 @@ def _derive_diagnosis(
     hallucination = quality.hallucination_score
     alignment = quality.alignment_score
 
-    if intent == "explain_low_confidence":
-        return (
-            f"Confidence is low at {confidence if confidence is not None else 'N/A'}, "
-            f"with {chunks_retrieved} chunks retrieved. "
-            "Likely causes are sparse retrieval coverage or weak source grounding."
-        )
-
-    if hallucination is not None and hallucination >= 0.6:
-        return (
-            f"High hallucination risk detected ({hallucination:.2f}) with alignment "
-            f"{alignment if alignment is not None else 'N/A'}."
-        )
+    risk_signals: List[str] = []
 
     if chunks_retrieved == 0:
-        return "No supporting chunks were retrieved, indicating a retrieval gap for this query."
+        risk_signals.append("no supporting chunks retrieved")
+    elif chunks_retrieved < 2:
+        risk_signals.append("limited retrieval coverage")
 
-    return "Investigation completed with available retrieval and critique evidence."
+    if confidence is not None and confidence < 0.45:
+        risk_signals.append(f"low confidence ({confidence:.2f})")
+    if hallucination is not None and hallucination >= 0.6:
+        risk_signals.append(f"high hallucination risk ({hallucination:.2f})")
+    if alignment is not None and alignment < 0.4:
+        risk_signals.append(f"weak source alignment ({alignment:.2f})")
+
+    if intent == "explain_low_confidence":
+        if confidence is None:
+            return "Confidence score unavailable; use retrieval evidence and grounding checks to explain risk."
+        return (
+            f"Confidence is {confidence:.2f} with {chunks_retrieved} chunks retrieved. "
+            "Likely contributors are retrieval coverage gaps and weak source grounding."
+        )
+
+    if risk_signals:
+        return "Investigation identified risk signals: " + "; ".join(risk_signals) + "."
+
+    return "Investigation completed with acceptable retrieval coverage and no major critique risk signals."
 
 
 def _derive_recommended_actions(
@@ -144,7 +168,7 @@ def _derive_recommended_actions(
     quality: InvestigationQualitySummary,
     chunks_retrieved: int,
 ) -> List[str]:
-    actions = ["Review top retrieved chunks for relevance and freshness."]
+    actions: List[str] = ["Review top retrieved chunks for relevance and freshness."]
 
     if chunks_retrieved < 2:
         actions.append("Re-index or expand source documents for this topic.")
@@ -155,10 +179,27 @@ def _derive_recommended_actions(
     if quality.confidence_score is not None and quality.confidence_score < 0.5:
         actions.append("Use narrower document filters and regenerate with explicit constraints.")
 
+    if quality.alignment_score is not None and quality.alignment_score < 0.4:
+        actions.append("Inspect cited chunks and enforce stricter source-grounded response formatting.")
+
+    if intent == "investigate_root_cause":
+        actions.append("Review the immediate user-assistant message pair to isolate where grounding degraded.")
+
+    if intent == "draft_improved_answer":
+        actions.append("Treat improved draft as advisory and require human approval before user-facing use.")
+
+    if intent == "explain_low_confidence":
+        actions.append("Check document freshness and indexing status for the referenced topic.")
+
     if intent == "recommend_next_action" and len(actions) < 3:
         actions.append("Capture this case as a benchmark failure example for future evaluation.")
 
-    return actions
+    deduped_actions: List[str] = []
+    for action in actions:
+        if action not in deduped_actions:
+            deduped_actions.append(action)
+
+    return deduped_actions
 
 
 async def _call_ai_engine_for_investigation(

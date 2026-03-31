@@ -373,6 +373,7 @@ export interface AdminInvestigationRunRequest {
 
 export interface AdminInvestigationRunResponse {
     investigation_id: number;
+    investigation_correlation_id?: string | null;
     conversation_id: number;
     instruction_intent: string;
     diagnosis: string;
@@ -388,8 +389,27 @@ export interface AdminInvestigationRunResponse {
     };
     recommended_next_actions: string[];
     improved_draft_answer?: string | null;
+    error_details?: Array<Record<string, unknown>>;
     status: string;
     created_at: string;
+}
+
+export interface AdminInvestigationHistoryItem {
+    id: number;
+    instruction_intent: string;
+    status: string;
+    latency_ms: number;
+    confidence_score: number | null;
+    hallucination_score: number | null;
+    alignment_score: number | null;
+    diagnosis_summary: string;
+    created_at: string;
+}
+
+export interface AdminInvestigationHistoryResponse {
+    conversation_id: number;
+    returned_count: number;
+    items: AdminInvestigationHistoryItem[];
 }
 
 export async function getAdminUsers(token: string) {
@@ -434,7 +454,7 @@ export async function runAdminInvestigation(body: AdminInvestigationRunRequest, 
 }
 
 export async function getAdminInvestigationsByConversation(conversationId: number, token: string) {
-    return requestJson<Record<string, unknown>>(`/admin/investigations/conversation/${conversationId}`, {
+    return requestJson<AdminInvestigationHistoryResponse>(`/admin/investigations/conversation/${conversationId}`, {
         token,
         throwOnError: true,
     });

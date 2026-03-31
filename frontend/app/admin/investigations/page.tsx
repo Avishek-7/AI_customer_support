@@ -7,6 +7,8 @@ import {
   InvestigationIntent,
   AdminInvestigationRunResponse,
   runAdminInvestigation,
+  getAdminInvestigationsByConversation,
+  AdminInvestigationHistoryResponse,
 } from "@/lib/api";
 import { getStoredToken } from "@/lib/auth";
 
@@ -31,8 +33,25 @@ export default function AdminInvestigationsPage() {
   const [constraints, setConstraints] = useState("");
   const [k, setK] = useState("5");
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [result, setResult] = useState<AdminInvestigationRunResponse | null>(null);
+  const [history, setHistory] = useState<AdminInvestigationHistoryResponse | null>(null);
+
+  const loadHistory = async (parsedConversationId: number, token: string) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const payload = await getAdminInvestigationsByConversation(parsedConversationId, token);
+      setHistory(payload);
+    } catch (err) {
+      setHistory(null);
+      setHistoryError(`Failed to load history: ${String(err)}`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -70,11 +89,28 @@ export default function AdminInvestigationsPage() {
         token,
       );
       setResult(payload);
+      await loadHistory(parsedConversationId, token);
     } catch (err) {
       setError(`Investigation failed: ${String(err)}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const onLoadHistory = async () => {
+    const token = getStoredToken();
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    const parsedConversationId = Number.parseInt(conversationId, 10);
+    if (!Number.isInteger(parsedConversationId) || Number.isNaN(parsedConversationId) || parsedConversationId <= 0) {
+      setHistoryError("Please enter a valid conversation ID before loading history");
+      return;
+    }
+
+    await loadHistory(parsedConversationId, token);
   };
 
   return (
@@ -147,6 +183,14 @@ export default function AdminInvestigationsPage() {
           >
             {loading ? "Running..." : "Run Investigation"}
           </button>
+          <button
+            type="button"
+            disabled={historyLoading}
+            onClick={onLoadHistory}
+            className="ml-3 px-6 py-2 rounded bg-gray-600 hover:bg-gray-500 disabled:opacity-50 font-semibold"
+          >
+            {historyLoading ? "Loading History..." : "Load History"}
+          </button>
         </form>
 
         {result ? (
@@ -154,6 +198,9 @@ export default function AdminInvestigationsPage() {
             <div className="bg-gray-800 p-6 rounded-lg">
               <h2 className="text-2xl font-bold mb-2">Investigation Result</h2>
               <p className="text-gray-400 text-sm">Investigation #{result.investigation_id} • {result.status}</p>
+              {result.investigation_correlation_id ? (
+                <p className="text-gray-500 text-xs mt-1">Correlation: {result.investigation_correlation_id}</p>
+              ) : null}
               <p className="mt-3 text-white">{result.diagnosis}</p>
             </div>
 
@@ -202,8 +249,46 @@ export default function AdminInvestigationsPage() {
                 <p className="whitespace-pre-wrap text-gray-100">{result.improved_draft_answer}</p>
               </div>
             ) : null}
+
           </div>
         ) : null}
+
+        <div className="bg-gray-800 p-6 rounded-lg">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xl font-bold">Investigation History</h3>
+            <button
+              type="button"
+              disabled={historyLoading}
+              onClick={onLoadHistory}
+              className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-sm"
+            >
+              {historyLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+
+          {historyError ? <p className="text-red-400 text-sm mb-2">{historyError}</p> : null}
+
+          {!history || history.items.length === 0 ? (
+            <p className="text-gray-400 text-sm">No investigations found for this conversation yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {history.items.map((item) => (
+                <div key={item.id} className="bg-gray-700 p-3 rounded text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-gray-100">#{item.id} • {item.instruction_intent}</p>
+                    <p className="text-gray-300">
+                      {item.status} • {new Date(item.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="text-gray-300 mt-1">{item.diagnosis_summary}</p>
+                  <p className="text-gray-400 mt-1">
+                    Latency: {item.latency_ms}ms • Confidence: {formatPct(item.confidence_score)} • Hallucination: {formatPct(item.hallucination_score)} • Alignment: {formatPct(item.alignment_score)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

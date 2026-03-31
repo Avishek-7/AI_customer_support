@@ -4,18 +4,19 @@ from typing import Optional
 class Settings(BaseSettings):
     app_name: str = "AI Customer Support Backend"
 
-    JWT_SECRET_KEY: str = "test-secret-key-for-testing-only"
+    # Security-sensitive values are required from environment/.env.
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 1 day
 
     # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
+    DATABASE_URL: str
 
     # AI Engine
-    AI_ENGINE_URL: str = "http://localhost:9000"
+    AI_ENGINE_URL: str
 
     # Redis (for rate limiting)
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str
     RATE_LIMIT_FAIL_CLOSED_ON_REDIS_UNAVAILABLE: bool = True
 
     # Chat response cache
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     CACHE_PREFIX: str = "chat"
 
     # Frontend URL (for password reset links)
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str
 
     # Email / SMTP settings
     SMTP_HOST: str = "localhost"
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "AI Customer Support Backend <no-reply@local.test>"
 
     # Internal service authentication (AI engine -> backend callbacks)
-    INTERNAL_API_KEY: str = "test-internal-api-key-for-testing-only"
+    INTERNAL_API_KEY: str
 
     class Config:
         env_file = ".env"
